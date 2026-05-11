@@ -1,0 +1,186 @@
+:where(.mcv-theme, .mcv-root) {
+  box-sizing: border-box;
+  color: var(--mcv-color-text-muted);
+  font-family: var(--mcv-font-family);
+  font-size: 1rem;
+  line-height: 1.5;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:where(.mcv-theme, .mcv-root) *,
+:where(.mcv-theme, .mcv-root) *::before,
+:where(.mcv-theme, .mcv-root) *::after {
+  box-sizing: inherit;
+}
+
+:where(.mcv-theme, .mcv-root) :where(button, input, select, textarea) {
+  margin: 0;
+  font: inherit;
+}
+
+:where(.mcv-theme, .mcv-root) :where(a) {
+  color: inherit;
+  text-decoration: none;
+}
+
+:where(.mcv-theme, .mcv-root) :where(p, ul) {
+  margin: 0;
+  padding: 0;
+}
+
+:where(.mcv-theme, .mcv-root) :where(ul) {
+  list-style: none;
+}
+
+:where(.mcv-theme, .mcv-root) :where(img, svg) {
+  max-width: 100%;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-button,
+:where(.mcv-theme, .mcv-root) .ms-input {
+  appearance: none;
+  border: 1px solid var(--mcv-border-color);
+  border-radius: var(--mcv-border-radius);
+  background: var(--mcv-color-surface);
+  color: var(--mcv-color-text);
+  line-height: 1.5;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-input {
+  display: inline-flex;
+  width: 100%;
+  min-height: var(--mcv-control-height);
+  padding: calc(0.5em - 1px) calc(0.75em - 1px);
+  box-shadow: inset 0 1px 2px rgba(10, 10, 10, 0.08);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-button {
+  position: relative;
+  display: inline-flex;
+  min-height: var(--mcv-control-height);
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: calc(0.5em - 1px) 1em;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 2px rgba(10, 10, 10, 0.04);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-button:hover,
+:where(.mcv-theme, .mcv-root) .ms-input:hover {
+  border-color: var(--mcv-border-color-hover);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-button:focus-visible,
+:where(.mcv-theme, .mcv-root) .ms-input:focus,
+:where(.mcv-theme, .mcv-root) .ms-input:focus-visible {
+  outline: none;
+  border-color: var(--mcv-color-primary);
+  box-shadow: 0 0 0 0.125em color-mix(in srgb, var(--mcv-color-primary) 24%, transparent);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-button:disabled,
+:where(.mcv-theme, .mcv-root) .ms-button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-is-small {
+  font-size: 0.75rem;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-icon {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+}
+
+:where(.mcv-theme, .mcv-root) svg.lucide {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--mcv-z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-background {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.55);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-content {
+  position: relative;
+  z-index: 1;
+  width: min(95vw, 1400px);
+  max-height: 95vh;
+  overflow: auto;
+  border-radius: var(--mcv-panel-radius);
+  background: var(--mcv-color-surface);
+  box-shadow: var(--mcv-shadow-floating);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-close,
+:where(.mcv-theme, .mcv-root) .ms-delete {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.18);
+  color: transparent;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-close::before,
+:where(.mcv-theme, .mcv-root) .ms-modal-close::after,
+:where(.mcv-theme, .mcv-root) .ms-delete::before,
+:where(.mcv-theme, .mcv-root) .ms-delete::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.9rem;
+  height: 2px;
+  background: var(--mcv-color-surface);
+  border-radius: 999px;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-close,
+:where(.mcv-theme, .mcv-root) .ms-delete {
+  position: relative;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-close::before,
+:where(.mcv-theme, .mcv-root) .ms-delete::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-close::after,
+:where(.mcv-theme, .mcv-root) .ms-delete::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-close:hover,
+:where(.mcv-theme, .mcv-root) .ms-modal-close:focus-visible,
+:where(.mcv-theme, .mcv-root) .ms-delete:hover,
+:where(.mcv-theme, .mcv-root) .ms-delete:focus-visible {
+  background: rgba(15, 23, 42, 0.28);
+  outline: none;
+}
