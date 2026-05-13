@@ -721,9 +721,14 @@
   z-index: 2;
 }
 
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active .ms-modal-content.ms-is-large,
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active .ms-modal-content.ms-is-large,
 .ms-modal.ms-is-active .ms-modal-content.ms-is-large {
-  width: 95vw;
-  max-height: 95vh;
+  width: min(calc(100vw - 4rem), 1960px);
+  height: min(calc(100vh - 4rem), 1280px);
+  max-height: calc(100vh - 4rem);
+  margin: auto;
+  overflow: hidden;
 }
 
 .ms-modal.ms-modal {

@@ -2,6 +2,14 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.0.4 - 2026-05-13
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- fix: 修复 fullscreen overlay 和 scene remount 行为
+- fix: 调整 settings panel 与 toolkit 样式覆盖
+
+
 ## 0.0.3 - 2026-05-12
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

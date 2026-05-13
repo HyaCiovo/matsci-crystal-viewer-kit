@@ -109,9 +109,12 @@
   vertical-align: -0.125em;
 }
 
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal,
 :where(.mcv-theme, .mcv-root) .ms-modal {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: var(--mcv-z-overlay);
   display: flex;
   align-items: center;

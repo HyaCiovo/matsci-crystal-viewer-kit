@@ -133,3 +133,31 @@
   right: 0;
   min-width: 100px;
 }
+
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active [data-slot='overlay-content'],
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active [data-slot='overlay-content'] {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active [data-slot='viewer-shell'],
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active [data-slot='viewer-shell'] {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: calc(100vh - 8rem);
+}
+
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active [data-slot='scene-frame'],
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active [data-slot='scene-frame'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+}
+
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active .ms-scene-square-wrapper,
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active .ms-scene-square-wrapper {
+  width: 100% !important;
+  max-width: min(calc(100vh - 9rem), calc(100vw - 10rem)) !important;
+}

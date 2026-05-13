@@ -3,4 +3,6 @@
 @import '../themes/foundation/dropdown.css';
 @import '../themes/foundation/tooltip.css';
 @import '../themes/foundation/range-slider.css';
+@import '../themes/shared/components-data-display.css';
+@import '../themes/shared/components-navigation.css';
 @import '../themes/shared/components-crystal.css';
