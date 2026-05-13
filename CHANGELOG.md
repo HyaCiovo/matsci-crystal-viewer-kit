@@ -2,6 +2,15 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.0.5 - 2026-05-13
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- fix(crystal-viewer): 修复全屏弹窗与场景重挂载问题，调整面板与工具栏样式
+- chore: 发布v0.0.3版本并更新变更日志
+- feat: 初始化晶体结构查看器套件并发布v0.0.2
+
+
 ## 0.0.4 - 2026-05-13
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

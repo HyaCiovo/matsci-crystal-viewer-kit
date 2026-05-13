@@ -291,7 +291,6 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
     ref: mountNodeRef,
     onResize: ({ width, height }) => {
       if (scene.current) {
-        console.log('resizing');
         scene.current.resizeRendererToDisplaySize();
       }
     }
@@ -651,7 +650,6 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
         });
       }
     }
-    console.log('new props');
   }, [props.customCameraState]);
 
   useEffect(() => {

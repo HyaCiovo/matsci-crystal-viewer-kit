@@ -8,6 +8,7 @@ import Scene from '../scene/Scene';
 
 const sceneApi = vi.hoisted(() => ({
   resizeRendererToDisplaySize: vi.fn(),
+  renderScene: vi.fn(),
   enableDebug: vi.fn(),
   addToScene: vi.fn(),
   toggleVisibility: vi.fn(),
@@ -77,6 +78,33 @@ describe('CrystalToolkitScene', () => {
     await waitFor(() => expect(Scene).toHaveBeenCalled());
     unmount();
 
+    expect(sceneApi.onDestroy).toHaveBeenCalled();
+  });
+
+  it('does not fail when cleanup triggers destroy more than once', async () => {
+    const { rerender, unmount } = render(
+      <CrystalToolkitScene
+        sceneSize={500}
+        settings={{ renderer: Renderer.SVG }}
+        data={sceneData}
+        debug={false}
+        toggleVisibility={{}}
+      />
+    );
+
+    await waitFor(() => expect(Scene).toHaveBeenCalled());
+
+    rerender(
+      <CrystalToolkitScene
+        sceneSize={500}
+        settings={{ renderer: Renderer.SVG }}
+        data={{ ...sceneData }}
+        debug={false}
+        toggleVisibility={{}}
+      />
+    );
+
+    expect(() => unmount()).not.toThrow();
     expect(sceneApi.onDestroy).toHaveBeenCalled();
   });
 
