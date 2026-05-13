@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.0.3 - 2026-05-12
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- feat: 初始化晶体结构查看器套件并发布v0.0.2
+
+
 ## 0.0.2 - 2026-05-11
 
 Package: `@gnosys/matsci-crystal-viewer-kit`
