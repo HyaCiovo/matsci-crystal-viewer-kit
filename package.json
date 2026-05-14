@@ -1,6 +1,6 @@
 {
   "name": "@gnosys/matsci-crystal-viewer-kit",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "description": "Extracted crystal structure viewer components from matsci-ui",
   "author": "hyacinth",
   "type": "module",
@@ -53,10 +53,9 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "clsx": "^2.1.1",
     "d3-color": "^3.1.0",
-    "react-icons": "^4.12.0",
+    "lucide-react": "^0.539.0",
     "svgtodatauri": "^0.0.0",
-    "use-resize-observer": "^9.1.0",
-    "uuid": "^13.0.0"
+    "use-resize-observer": "^9.1.0"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.8",

@@ -10,40 +10,47 @@ import {
   Renderer,
   ThreePosition
 } from './constants';
-import { TooltipHelper } from './tooltip-helper';
-import { InsetHelper, ScenePosition } from './inset-helper';
+import { createTooltipController, type TooltipController } from './tooltip-helper';
+import { createInsetController, type InsetController, ScenePosition } from './inset-helper';
 import { getSceneWithBackground, ThreeBuilder } from './three_builder';
-import { DebugHelper } from './debug-helper';
-import {
-  disposeSceneHierarchy,
-  getScreenCoordinate,
-  getThreeScreenCoordinate,
-  moveAndUnprojectPoint,
-  ObjectRegistry
-} from '../utils';
+import { createDebugController, type DebugController } from './debug-helper';
+import { disposeSceneHierarchy } from '../utils';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
-import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { SceneJsonObject } from './simple-scene';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { AnimationHelper } from './animation-helper';
-import { PhononAnimationHelper } from './phonon-animation-helper';
+import { createAnimationController, type AnimationController } from './animation-helper';
+import { createPhononAnimationController } from './phonon-animation-helper';
+import {
+  createSceneControlsController,
+  type SceneControls,
+  type SceneControlsController
+} from './scene-controls';
+import {
+  createSelectionController,
+  type SelectionController
+} from './selection-controller';
+import { buildSceneGraph } from './scene-graph';
+import {
+  applyOrthographicCameraFrame,
+  calculateCameraFrame,
+  createOrthographicCamera
+} from './scene-camera';
+import {
+  createSceneInteractionController,
+  type SceneInteractionController,
+  type SceneInteractionReference
+} from './scene-interaction';
+import {
+  createSceneObjectRegistry,
+  type SceneObjectRegistry
+} from './scene-object-registry';
+import { createSceneHitTester, type SceneHitTester } from './scene-hit-test';
 import { CameraState } from '../CameraContextProvider/camera-reducer';
 
-const POINTER_CLASS = 'show-pointer';
 type SceneJsonLike = SceneJsonObject & Record<string, any>;
 type SceneSettings = typeof defaults & Record<string, any>;
-type SceneControls = {
-  update(): void;
-  dispose(): void;
-  addEventListener(type: string, listener: () => void): void;
-};
-type SceneClickReference =
-  | {
-      point: THREE.Vector3;
-      object: { sceneObject: Object3D; jsonObject: SceneJsonLike } | null;
-    }
-  | null
-  | undefined;
+type VisibilityMap = Record<string, boolean>;
+type SceneClickReference = SceneInteractionReference<SceneJsonLike>;
+type SceneSize = { width: number; height: number };
 export default class Scene {
   private destroyed = false;
   private controlsInitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -51,40 +58,46 @@ export default class Scene {
   private renderer!: THREE.WebGLRenderer | SVGRenderer;
   private labelRenderer!: CSS2DRenderer;
   public scene!: THREE.Scene; // expose getter instead
-  private cachedMountNodeSize!: { width: number; height: number };
+  private cachedMountNodeSize!: SceneSize;
   private camera!: THREE.OrthographicCamera;
   private cameraState?: CameraState;
   private frameId?: number;
-  private clickableObjects: THREE.Object3D[] = [];
-  private tooltipObjects: THREE.Object3D[] = [];
-  private objectDictionnary: Record<number, SceneJsonLike> = {};
   private controls: SceneControls | null = null;
-  private tooltipHelper = new TooltipHelper();
+  private controlsController: SceneControlsController | null = null;
+  private interactionController: SceneInteractionController | null = null;
+  private objectRegistry: SceneObjectRegistry<SceneJsonLike> = createSceneObjectRegistry();
+  private hitTester: SceneHitTester<SceneJsonLike>;
+  private tooltipHelper: TooltipController = createTooltipController();
   private axis!: Object3D;
   private axisJson: SceneJsonLike | null = null;
-  private inset!: InsetHelper;
+  private inset!: InsetController;
   private inletPosition!: ScenePosition;
   private objectBuilder: ThreeBuilder;
   private clickCallback: (objects: SceneJsonLike[]) => void;
-  private debugHelper!: DebugHelper;
+  private debugHelper: DebugController | null = null;
   private readonly raycaster = new THREE.Raycaster();
 
   private outline!: OutlineEffect;
-  private selectedJsonObjects: SceneJsonLike[] = [];
   private outlineScene = new THREE.Scene();
+  private selectionController: SelectionController<SceneJsonLike>;
 
   private threeUUIDTojsonObject: Record<string, SceneJsonLike> = {};
   private computeIdToThree: { [id: string]: THREE.Object3D } = {};
 
   // handle multiSelection via shift key
   private isMultiSelectionEnabled = false;
-  private registry = new ObjectRegistry();
-
-  private clock = new THREE.Clock();
-  private animationHelper: AnimationHelper | PhononAnimationHelper;
+  private animationHelper: AnimationController;
 
   private cacheMountBBox(mountNode: Element) {
     this.cachedMountNodeSize = { width: mountNode.clientWidth, height: mountNode.clientHeight };
+  }
+
+  private getCachedMountBBox() {
+    return this.cachedMountNodeSize;
+  }
+
+  private getRendererMountNode() {
+    return this.renderer?.domElement?.parentElement ?? null;
   }
 
   private determineSceneRenderer() {
@@ -117,9 +130,17 @@ export default class Scene {
     }
 
     this.renderer = renderer;
-    this.renderer.setSize(this.cachedMountNodeSize.width, this.cachedMountNodeSize.height);
+    const { width, height } = this.getCachedMountBBox();
+    this.renderer.setSize(width, height);
     //TODO(chab) This should be simpler
     mountNode.appendChild(this.renderer.domElement);
+  }
+
+  private applyLabelRendererLayout(width: number, height: number) {
+    this.labelRenderer.setSize(width, height);
+    this.labelRenderer.domElement.style.position = 'relative';
+    this.labelRenderer.domElement.style.top = `-${height}px`;
+    this.labelRenderer.domElement.style.pointerEvents = 'none';
   }
 
   private configureLabelRenderer(mountNode: Element) {
@@ -127,139 +148,72 @@ export default class Scene {
     this.labelRenderer = labelRenderer;
     const width = mountNode.clientWidth;
     const height = mountNode.clientHeight;
-    labelRenderer.setSize(width, height);
-    labelRenderer.domElement.style.position = 'relative';
-    labelRenderer.domElement.style.top = `-${height}px`;
-    labelRenderer.domElement.style.pointerEvents = 'none';
+    this.applyLabelRendererLayout(width, height);
     mountNode.appendChild(labelRenderer.domElement);
   }
 
-  mouseMoveListener = (e: Event) => {
-    if (this.destroyed || !this.renderer?.domElement) {
-      return;
-    }
-    const mouseEvent = e as MouseEvent;
-    if (this.renderer instanceof WebGLRenderer || true) {
-      // tooltips
-      let p = this.getClickedReference(mouseEvent.offsetX, mouseEvent.offsetY, this.tooltipObjects);
-      if (p && p.object) {
-        const { object, point } = p;
-        this.tooltipHelper.updateTooltip(point, object!.jsonObject, object!.sceneObject);
-        this.renderScene();
-      } else {
-        this.tooltipHelper.hideTooltipIfNeeded() && this.renderScene();
-      }
-      // change mouse pointer for clickable objects
-      p = this.getClickedReference(mouseEvent.offsetX, mouseEvent.offsetY, this.clickableObjects);
-      if (p && p.object) {
-        this.renderer.domElement.classList.add(POINTER_CLASS);
-      } else {
-        this.renderer.domElement.classList.remove(POINTER_CLASS);
-      }
-    } else {
-      console.warn('No mousemove implementation for SVG');
-    }
-  };
-  clickListener = (e: Event) => {
-    if (this.destroyed || !this.renderer?.domElement) {
-      return;
-    }
-    const mouseEvent = e as MouseEvent;
-    if (this.renderer instanceof WebGLRenderer || true) {
-      const p = this.getClickedReference(mouseEvent.offsetX, mouseEvent.offsetY, this.clickableObjects);
-      this.onClickImplementation(p, mouseEvent);
-    } else {
-      console.warn('No implementation of click for SVG');
-    }
-  };
-
-  private configureScene() {
-    if (this.destroyed || !this.renderer?.domElement) {
-      return;
-    }
+  private initializeSceneCore() {
     this.scene = getSceneWithBackground(this.settings);
-    this.clickableObjects = [];
-    this.objectDictionnary = {};
-    // default camera
+    this.objectRegistry.reset();
     this.camera = new THREE.OrthographicCamera(100, 100, 100, 100, 100);
-    const lights = this.objectBuilder.makeLights(this.settings.lights as any);
-    this.scene.add(lights);
+    this.scene.add(this.objectBuilder.makeLights(this.settings.lights as any));
     this.scene.add(this.tooltipHelper.tooltip);
     this.scene.add(this.camera);
-    this.renderer.domElement.addEventListener('mousemove', this.mouseMoveListener);
-    this.renderer.domElement.addEventListener('click', this.clickListener);
-    // when the component is mounted, the camera can be updated in the same event loop
-    // if the scene is configured
-    // we defer the initialization of the control to the next event loop to avoid
-    // some control events that would trigger unnecessary rendering
+  }
+
+  private attachInteractionListeners() {
+    this.interactionController = createSceneInteractionController({
+      tooltipController: this.tooltipHelper,
+      renderer: this.renderer,
+      domElement: this.renderer.domElement as HTMLElement,
+      clickableObjects: this.objectRegistry.getClickableObjects(),
+      tooltipObjects: this.objectRegistry.getTooltipObjects(),
+      getClickedReference: (clientX, clientY, objectsToCheck) =>
+        this.hitTester.getClickedReference(clientX, clientY, objectsToCheck),
+      renderScene: () => this.renderScene(),
+      onClickReference: (reference, event) => this.onClickImplementation(reference, event)
+    });
+    this.renderer.domElement.addEventListener('mousemove', this.interactionController.mouseMoveListener);
+    this.renderer.domElement.addEventListener('click', this.interactionController.clickListener);
+  }
+
+  private scheduleControlsInitialization() {
     this.controlsInitTimer = setTimeout(() => {
       this.controlsInitTimer = null;
       this.configureControls();
     }, 0);
   }
 
+  private configureScene() {
+    if (this.destroyed || !this.renderer?.domElement) {
+      return;
+    }
+    this.initializeSceneCore();
+    this.attachInteractionListeners();
+    this.scheduleControlsInitialization();
+  }
+
   private configureControls() {
     if (this.destroyed || !this.renderer?.domElement) {
       return;
     }
-    switch (this.settings.controls) {
-      case Control.ORBIT: {
-        const controls = new OrbitControls(this.camera, this.renderer.domElement as HTMLElement);
-        controls.rotateSpeed = 2.0;
-        controls.zoomSpeed = 1.2;
-        controls.panSpeed = 0.8;
-        controls.enabled = true;
-        this.controls = controls;
-        break;
-      }
-      default: {
-        const controls = new TrackballControls(
-          this.camera,
-          this.renderer.domElement as HTMLElement
-        );
-        controls.rotateSpeed = 2.0;
-        controls.zoomSpeed = 1.2;
-        controls.panSpeed = 0.8;
-        controls.enabled = true;
-        controls.staticMoving = true;
-        this.controls = controls;
-        break;
-      }
-    }
-    const controls = this.controls;
-    if (!controls) {
-      return;
-    }
-
-    if (
-      this.settings.staticScene ||
-      this.settings.animation === AnimationStyle.NONE ||
-      this.settings.animation === AnimationStyle.SLIDER
-    ) {
-      // only re-render when scene is rotated
-      controls.addEventListener('change', () => {
-        this.dispatch(this.camera.position, this.camera.quaternion, this.camera.zoom);
-        this.renderScene();
-      });
-      controls.addEventListener('start', () => {
-        controls.update();
-        this.settings.controls === Control.TRACKBALL &&
-          document.addEventListener('mousemove', this.mouseTrackballUpdate, false);
-      });
-      controls.addEventListener('end', () => {
-        controls.update();
-        this.settings.controls === Control.TRACKBALL &&
-          document.removeEventListener('mousemove', this.mouseTrackballUpdate, false);
-      });
-    } else {
-      // constantly re-render (for animation)
-      this.start();
-    }
+    this.controlsController?.dispose();
+    this.controlsController = createSceneControlsController({
+      camera: this.camera,
+      domElement: this.renderer.domElement as HTMLElement,
+      controlType: this.settings.controls as Control,
+      staticScene: this.settings.staticScene,
+      animation: this.settings.animation as AnimationStyle,
+      dispatchCamera: this.dispatch,
+      renderScene: () => this.renderScene(),
+      startAnimationLoop: () => this.start()
+    });
+    this.controls = this.controlsController.controls;
   }
 
-  private readonly mouseTrackballUpdate = () => {
-    this.controls?.update();
-  };
+  public getRenderer() {
+    return this.renderer;
+  }
 
   public updateCamera(position: Vector3, rotation?: Quaternion, zoom?: number) {
     this.camera.position.copy(position);
@@ -277,101 +231,34 @@ export default class Scene {
 
   private onClickImplementation(p: SceneClickReference, e: MouseEvent) {
     let needRedraw = false;
-    //TODO(chab) make it more readale
     if (p && p.object) {
-      const { object, point } = p;
+      const { object } = p;
       if (object?.sceneObject) {
-        const sceneObject: Object3D = object?.sceneObject;
-        const jsonObject = object?.jsonObject as SceneJsonLike;
-        if (this.isMultiSelectionEnabled) {
-          // if the object is not in the registry, it just means it's the first time
-          // we select it
-          const objectIndex = this.outlineScene.children.indexOf(
-            this.registry.getObjectFromRegistry(sceneObject.uuid)
-          );
-          const jsonObjectIndex = this.selectedJsonObjects.indexOf(jsonObject);
-          if (
-            (objectIndex === -1 && jsonObjectIndex > -1) ||
-            (jsonObjectIndex === -1 && objectIndex > -1)
-          ) {
-            console.warn(
-              'During selection found a THREE object without a corresponding json object ( or vice-versa'
-            );
-            console.warn('THREE OBJECT', object, 'JSON', jsonObject);
+        needRedraw = this.selectionController.applySelection(
+          {
+            sceneObject: object.sceneObject as Object3D,
+            jsonObject: object.jsonObject as SceneJsonLike
+          },
+          {
+            multiSelectEnabled: this.isMultiSelectionEnabled,
+            shiftKey: e.shiftKey
           }
-
-          if (jsonObjectIndex > -1) {
-            this.selectedJsonObjects.splice(jsonObjectIndex, 1);
-          } else {
-            if (e.shiftKey) {
-              this.selectedJsonObjects.push(jsonObject);
-            } else {
-              this.selectedJsonObjects = [jsonObject];
-            }
-          }
-
-          //TODO(chab) log warning if we have a json object without a three object, and vice-versa
-          if (objectIndex > -1) {
-            const object = this.outlineScene.children[objectIndex];
-            const sceneObject = this.registry.getObjectFromRegistry(object.uuid);
-            this.outlineScene.remove(sceneObject);
-          } else {
-            if (!this.registry.registryHasObject(sceneObject)) {
-              this.addClonedObject(sceneObject);
-            }
-            const threeObjectForOutlineScene = this.registry.getObjectFromRegistry(
-              sceneObject.uuid
-            );
-            if (e.shiftKey) {
-              this.outlineScene.add(threeObjectForOutlineScene);
-            } else {
-              if (this.outlineScene.children.length > 0) {
-                this.outlineScene.remove(...this.outlineScene.children);
-              }
-              this.outlineScene.add(threeObjectForOutlineScene);
-            }
-          }
-        } else {
-          disposeSceneHierarchy(this.outlineScene);
-          if (!this.registry.registryHasObject(sceneObject)) {
-            this.addClonedObject(sceneObject);
-          }
-          const threeObjectForOutlineScene = this.registry.getObjectFromRegistry(sceneObject.uuid);
-          if (this.outlineScene.children.length > 0) {
-            this.outlineScene.remove(...this.outlineScene.children);
-          }
-          this.outlineScene.add(threeObjectForOutlineScene);
-          this.selectedJsonObjects = [jsonObject];
-        }
-        needRedraw = true;
+        );
       }
-      this.clickCallback(this.selectedJsonObjects);
+      this.clickCallback(this.selectionController.getSelectedObjects());
     } else {
-      if (this.selectedJsonObjects.length > 0) {
+      if (this.selectionController.hasSelection()) {
         this.clickCallback([]);
       }
-
-      this.selectedJsonObjects = [];
-      if (this.outlineScene.children.length > 0) {
-        disposeSceneHierarchy(this.outlineScene);
-        this.outlineScene.remove(...this.outlineScene.children);
-        needRedraw = true;
-      }
+      needRedraw = this.selectionController.clearSelection();
     }
 
     if (this.settings.secondaryObjectView) {
-      this.outlineScene.children.length > 0
-        ? this.inset.showObject(this.outlineScene.children)
+      this.selectionController.hasOutlineChildren()
+        ? this.inset.showObject(this.selectionController.getOutlineChildren())
         : this.inset.showAxis();
     }
     needRedraw && this.renderScene();
-  }
-
-  private addClonedObject(sceneObject: THREE.Object3D) {
-    const clone = sceneObject.clone();
-    clone.matrixAutoUpdate = false;
-    clone.uuid = sceneObject.uuid;
-    this.registry.addToObjectRegisty(clone);
   }
 
   public updateAnimationStyle(animationStyle: AnimationStyle) {
@@ -404,19 +291,26 @@ export default class Scene {
     private debugDOMElement?: Element,
     cameraState?: CameraState
   ) {
-    this.settings = Object.assign(defaults, settings);
+    this.settings = { ...defaults, ...settings };
     this.objectBuilder = new ThreeBuilder(this.settings);
     this.cameraState = cameraState;
     this.cacheMountBBox(domElement);
     this.configureSceneRenderer(domElement);
     this.configureLabelRenderer(domElement);
+    this.hitTester = createSceneHitTester({
+      raycaster: this.raycaster,
+      getCamera: () => this.camera,
+      getViewportSize: () => this.cachedMountNodeSize,
+      resolveParentObject: (object) => this.objectRegistry.getParentObject(object)
+    });
     this.configureScene();
     this.configurePostProcessing();
     this.clickCallback = clickCallback;
     (this.outlineScene as any).autoUpdate = false;
+    this.selectionController = createSelectionController(this.outlineScene);
     const isPhonon = sceneJson?.app === 'phonon';
     this.animationHelper = isPhonon
-      ? new PhononAnimationHelper(
+      ? createPhononAnimationController(
           this.objectBuilder,
           sceneJson.amplitude,
           sceneJson.phases,
@@ -424,9 +318,9 @@ export default class Scene {
           sceneJson.eigenVectors,
           sceneJson.velocity
         )
-      : new AnimationHelper(this.objectBuilder);
+      : createAnimationController(this.objectBuilder);
     window.addEventListener('resize', this.windowListener, false);
-    this.inset = new InsetHelper(
+    this.inset = createInsetController(
       this.axis,
       (this.axisJson ?? {}) as SceneJsonLike,
       this.scene,
@@ -451,24 +345,106 @@ export default class Scene {
     this.renderInlet();
   }
 
+  private syncMountSizeFromRendererParent() {
+    const mountNode = this.getRendererMountNode();
+    if (!mountNode) {
+      return null;
+    }
+    this.cacheMountBBox(mountNode);
+    return this.getCachedMountBBox();
+  }
+
+  private syncLabelRendererLayout(size: SceneSize) {
+    this.applyLabelRendererLayout(size.width, size.height);
+  }
+
+  private syncSvgRendererSize(size: SceneSize) {
+    if (this.renderer instanceof SVGRenderer) {
+      this.renderer.setSize(size.width, size.height);
+    }
+  }
+
+  private applyWebGLViewport(renderer: WebGLRenderer, size: SceneSize) {
+    renderer.clear();
+    renderer.setSize(size.width, size.height);
+    //TODO(chab) not sure to understand why we have to turn on/off scissor tests between renderings
+    renderer.setScissorTest(true);
+    renderer.setScissor(0, 0, size.width, size.height);
+    renderer.setViewport(0, 0, size.width, size.height);
+  }
+
   public resizeRendererToDisplaySize() {
     if (this.destroyed || !this.renderer?.domElement || !this.labelRenderer?.domElement) {
       return;
     }
     const canvas = this.renderer.domElement as HTMLCanvasElement;
-    if (!canvas.parentElement) {
+    const size = this.syncMountSizeFromRendererParent();
+    if (!size) {
       return;
     }
-    this.cacheMountBBox(canvas.parentElement as Element);
-    const { width, height } = this.cachedMountNodeSize;
-    this.labelRenderer.setSize(width, height);
-    this.labelRenderer.domElement.style.top = `-${height}px`;
-    if (this.renderer instanceof SVGRenderer) {
-      this.renderer.setSize(width, height);
-    }
-    if (canvas.width !== width || canvas.height !== height) {
+    this.syncLabelRendererLayout(size);
+    this.syncSvgRendererSize(size);
+    if (canvas.width !== size.width || canvas.height !== size.height) {
       this.renderScene();
     }
+  }
+
+  private resetSceneStateForReplacement(sceneName: string) {
+    this.animationHelper.reset();
+    this.objectRegistry.reset();
+    this.threeUUIDTojsonObject = {};
+    this.computeIdToThree = {};
+    const outlinedObjectIds = this.selectionController.prepareForSceneReplacement();
+    this.removeObjectByName(sceneName);
+    return outlinedObjectIds;
+  }
+
+  private restorePreviousSelection(outlinedObjectIds: string[]) {
+    if (outlinedObjectIds.length === 0) {
+      return;
+    }
+
+    this.selectionController.restoreSelectionByIds(outlinedObjectIds, {
+      findThreeById: (id) => this.computeIdToThree[id],
+      findJsonByUuid: (uuid) => this.threeUUIDTojsonObject[uuid]
+    });
+
+    if (this.selectionController.hasOutlineChildren()) {
+      this.inset.showObject(this.selectionController.getOutlineChildren());
+    }
+  }
+
+  private renderBackgroundSnapshotIfNeeded() {
+    if (!this.settings.renderDivBackground) {
+      return;
+    }
+
+    const parent = this.renderer?.domElement?.parentElement;
+    if (parent) {
+      parent.style.backgroundSize = '100%';
+      parent.style.backgroundRepeat = 'no-repeat';
+      parent.style.backgroundPosition = 'center';
+    }
+    if (parent && this.renderer.domElement instanceof HTMLCanvasElement) {
+      parent.style.backgroundImage = `url('${this.renderer.domElement.toDataURL('image/png')}')`;
+    }
+  }
+
+  private syncInsetWithCurrentScene() {
+    if (!this.inset || !this.axis || !this.axisJson || this.selectionController.hasOutlineChildren()) {
+      return;
+    }
+
+    this.inset.setAxis(this.axis, this.axisJson);
+    this.inset.updateSelectedObject(this.axis, this.axisJson);
+  }
+
+  private buildAnimationsForScene(objectIdsToAnimate: string[]) {
+    objectIdsToAnimate.forEach((id) => {
+      const three = this.computeIdToThree[id];
+      const json: SceneJsonObject = this.threeUUIDTojsonObject[three.uuid];
+      this.animationHelper.buildAnimationSupport(json, three);
+    });
   }
 
   addToScene(sceneJson: SceneJsonObject, bypassRendering = false) {
@@ -480,182 +456,48 @@ export default class Scene {
     // if we found an object, we should remove all tootips and clicks related to it
     let outlinedObject: string[] = [];
     if (this.scene.getObjectByName(sceneJson.name!)) {
-      // see https://jsfiddle.net/L981td24/17/
-      this.animationHelper.reset();
-      this.clickableObjects = [];
-      this.tooltipObjects = [];
-      this.threeUUIDTojsonObject = {};
-      this.computeIdToThree = {};
-      this.registry.clear();
-      this.removeObjectByName(sceneJson.name!);
-      if (this.outlineScene.children.length > 0) {
-        outlinedObject = this.selectedJsonObjects.map((o) => o.id).filter(Boolean) as string[];
-        this.outlineScene.remove(...this.outlineScene.children);
-      }
-      this.selectedJsonObjects = [];
+      outlinedObject = this.resetSceneStateForReplacement(sceneJson.name!);
     }
 
-    const rootObject = new THREE.Object3D();
-    rootObject.name = sceneJson.name!;
-    sceneJson.visible && (rootObject.visible = sceneJson.visible);
+    const {
+      rootObject,
+      objectIdsToAnimate,
+      threeUUIDToJsonObject,
+      computeIdToThree,
+      axis,
+      axisJson
+    } = buildSceneGraph({
+      sceneJson: sceneJson as SceneJsonLike,
+      extractAxis: this.settings.extractAxis,
+      makeLeafObject: (objectJson) => this.makeObject(objectJson)
+    });
+    this.threeUUIDTojsonObject = threeUUIDToJsonObject;
+    this.computeIdToThree = computeIdToThree;
+    this.axis = axis as Object3D;
+    this.axisJson = axisJson;
 
-    const objectToAnimate = new Set<string>();
-    // recursively visit the scene, starting with the root object
-    const traverse_scene = (o: SceneJsonObject, parent: THREE.Object3D, currentId: string) => {
-      o.contents!.forEach((childObject, idx) => {
-        if (childObject.type) {
-          const object = this.makeObject(childObject);
-          parent.add(object);
-          this.threeUUIDTojsonObject[object.uuid] = childObject;
-          this.computeIdToThree[`${currentId}--${idx}`] = object;
-          childObject.id = `${currentId}--${idx}`;
-          if (childObject.animate) {
-            objectToAnimate.add(`${currentId}--${idx}`);
-          }
-        } else {
-          const threeObject = new THREE.Object3D();
-          threeObject.name = childObject.name!;
-          this.computeIdToThree[`${currentId}--${threeObject.name}`] = threeObject;
-          childObject.id = `${currentId}--${threeObject.name}`;
-          threeObject.visible = childObject.visible === undefined ? true : !!childObject.visible;
-          if (childObject.origin) {
-            const translation = new THREE.Matrix4();
-            // note(chab) have a typedefinition for the JSON
-            translation.makeTranslation(...(childObject.origin as ThreePosition));
-            threeObject.applyMatrix4(translation);
-          }
-          if (!this.settings.extractAxis || threeObject.name !== 'axes') {
-            parent.add(threeObject);
-          }
-          traverse_scene(childObject, threeObject, `${currentId}--${threeObject.name}`);
-          if (threeObject.name === 'axes') {
-            this.axis = threeObject.clone();
-            this.axisJson = { ...childObject };
-          }
-        }
-      });
-    };
-
-    traverse_scene(sceneJson, rootObject, '');
     // can cause memory leak
     //console.log('rootObject', rootObject, rootObject);
     this.scene.add(rootObject);
     this.setupCamera(rootObject);
-
-    // we try to update the outline from the preceding scene, but if the corresponding
-    // object is not there, we'll remove the outline
-    if (outlinedObject.length > 0) {
-      this.outlineScene.remove(...this.outlineScene.children);
-      outlinedObject.forEach((id) => {
-        const three = this.computeIdToThree[id];
-        if (three) {
-          this.addClonedObject(three);
-          this.outlineScene.add(this.registry.getObjectFromRegistry(three.uuid));
-          this.selectedJsonObjects.push(this.threeUUIDTojsonObject[three.uuid]);
-        } else {
-          // object has been removed from new scene, so we do not add it
-        }
-      });
-      // update inlet
-      this.outlineScene.children.length > 0 && this.inset.showObject(this.outlineScene.children);
-    }
-
-    // we can automatically output a screenshot to be the background of the parent div
-    // this helps for automated testing, printing the web page, etc.
-    if (this.settings.renderDivBackground) {
-      const parent = this.renderer?.domElement?.parentElement
-      if (parent) {
-        parent.style.backgroundSize = '100%'
-        parent.style.backgroundRepeat = 'no-repeat'
-        parent.style.backgroundPosition = 'center'
-      }
-      if (parent && this.renderer.domElement instanceof HTMLCanvasElement) {
-        // TS magic, domElements is automatically coerced to HTMLCanvasElement
-        parent.style.backgroundImage = `url('${this.renderer.domElement.toDataURL(
-          'image/png'
-        )}')`;
-      }
-    }
-
-    //FIXME(chab) try to move that before
-    if (this.inset && !!this.axis && !!this.axisJson && this.outlineScene.children.length === 0) {
-      this.inset.setAxis(this.axis, this.axisJson);
-      this.inset.updateSelectedObject(this.axis, this.axisJson);
-    }
-
-    objectToAnimate.forEach((id: string) => {
-      const three = this.computeIdToThree[id];
-      const json: SceneJsonObject = this.threeUUIDTojsonObject[three.uuid];
-      this.animationHelper.buildAnimationSupport(json, three);
-    });
+    this.restorePreviousSelection(outlinedObject);
+    this.renderBackgroundSnapshotIfNeeded();
+    this.syncInsetWithCurrentScene();
+    this.buildAnimationsForScene(objectIdsToAnimate);
     if (!bypassRendering) {
       this.renderScene();
     }
   }
 
   private setupCamera(rootObject: THREE.Object3D) {
-    // auto-zoom to fit object
-    // TODO: maybe better to move this elsewhere (what if using perspective?)
-    const box = new THREE.Box3();
-    box.setFromObject(rootObject);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const extent = box.max.sub(box.min);
-    let length = extent.length() * 2;
+    const { length } = calculateCameraFrame(rootObject, this.settings);
 
-    rootObject.position.sub(center);
-    rootObject.updateMatrixWorld(true);
-
-    if (this.settings.zoomToFit2D) {
-      length = extent.x > extent.y ? extent.x * 2 : extent.y * 2;
-    }
-
-    // we add a bit of padding, let's suppose we rotate, we want to avoid the
-    // object to go out of the camera while still on the screen
-    const Z_PADDING = 50;
     if (this.camera) {
-      this.camera.left = -length / this.settings.defaultZoom;
-      this.camera.right = length / this.settings.defaultZoom;
-      this.camera.top = length / this.settings.defaultZoom;
-      this.camera.bottom = -length / this.settings.defaultZoom;
-      this.camera.near = -length - Z_PADDING;
-      this.camera.far = length + Z_PADDING;
+      applyOrthographicCameraFrame(this.camera, this.scene, length, this.settings);
     } else {
-      this.camera = new THREE.OrthographicCamera(
-        -length,
-        length,
-        length,
-        -length,
-        -length - Z_PADDING,
-        length + Z_PADDING
-      );
+      this.camera = createOrthographicCamera(length, this.settings.defaultZoom);
+      applyOrthographicCameraFrame(this.camera, this.scene, length, this.settings);
     }
-
-    // we put the camera behind the object, object should be in the middle of the view, closer to the far plane
-    this.camera.position.z = 0;
-    this.camera.position.y = 0;
-    this.camera.position.x = 0;
-
-    const axis = (this.settings.cameraAxis ?? CameraAxis.Z) as CameraAxis;
-    this.camera.position[axis] =
-      this.settings.cameraPosition === 'back' ? length / 2 : -length / 2;
-
-    const offsets: Record<CameraAxis, [CameraAxis, CameraAxis]> = {
-      [CameraAxis.X]: [CameraAxis.Y, CameraAxis.Z],
-      [CameraAxis.Y]: [CameraAxis.X, CameraAxis.Z],
-      [CameraAxis.Z]: [CameraAxis.X, CameraAxis.Y]
-    };
-    const [offsetA, offsetB] = offsets[axis];
-    this.camera.position[offsetA] = length * 0.18;
-    this.camera.position[offsetB] = length * 0.12;
-
-    this.camera.lookAt(this.scene.position);
-    this.camera.zoom = 4;
-
-    this.camera.updateProjectionMatrix();
-    this.camera.updateMatrix();
     if (this.controls) {
       this.controls.update();
     }
@@ -663,17 +505,7 @@ export default class Scene {
 
   makeObject(object_json: SceneJsonLike): THREE.Object3D {
     const obj = new THREE.Object3D();
-
-    if (object_json.clickable) {
-      this.clickableObjects.push(obj);
-      this.objectDictionnary[obj.id] = object_json;
-    }
-
-    if (object_json.tooltip) {
-      this.tooltipObjects.push(obj);
-      this.objectDictionnary[obj.id] = object_json;
-    }
-
+    this.objectRegistry.registerObject(obj, object_json);
     return this.objectBuilder.makeObject(object_json, obj);
   }
 
@@ -716,22 +548,7 @@ export default class Scene {
       return;
     }
     if (this.renderer instanceof WebGLRenderer) {
-      this.renderer.clear();
-      this.renderer.setSize(this.cachedMountNodeSize.width, this.cachedMountNodeSize.height);
-      //TODO(chab) not sure to understand why we have to turn on/off scissor tests between renderings
-      this.renderer.setScissorTest(true);
-      this.renderer.setScissor(
-        0,
-        0,
-        this.cachedMountNodeSize.width,
-        this.cachedMountNodeSize.height
-      );
-      this.renderer.setViewport(
-        0,
-        0,
-        this.cachedMountNodeSize.width,
-        this.cachedMountNodeSize.height
-      );
+      this.applyWebGLViewport(this.renderer, this.getCachedMountBBox());
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -755,124 +572,95 @@ export default class Scene {
   }
 
   private renderInlet() {
-    this.inset &&
-      this.inletPosition !== ScenePosition.HIDDEN &&
-      this.renderer instanceof WebGLRenderer &&
+    if (!this.inset || this.inletPosition === ScenePosition.HIDDEN) {
+      return;
+    }
+    if (this.renderer instanceof WebGLRenderer) {
       this.inset.render(this.renderer, this.getInletOrigin(this.inletPosition));
+    }
   }
 
-  toggleVisibility(namesToVisibility: { [objectName: string]: boolean }) {
+  toggleVisibility(namesToVisibility: VisibilityMap) {
     if (this.destroyed || !this.scene) {
       return;
     }
-    if (!!namesToVisibility && Object.keys(namesToVisibility).length > 0) {
-      Object.keys(namesToVisibility).forEach((objName) => {
-        const obj = this.scene.getObjectByName(objName);
-        if (obj) {
-          obj.visible = !!namesToVisibility[objName];
-        }
-      });
-      // check all outlined objects, for each outlined object, their ancestors visibility can be false
-      // if it's the case, we'll need to remove the outlined object
-      // note that we consider that the selection is lost
-      const idsToRemove: string[] = [];
-      this.selectedJsonObjects = this.selectedJsonObjects.filter((o) => {
-        let threeobject = this.computeIdToThree[o.id as string];
-        let visible = true;
-        if (!threeobject.visible) {
-          idsToRemove.push(threeobject.uuid);
-          return false;
-        } else {
-          const baseObject = threeobject;
-          // walk the object hierarchy to check if parent are visible
-          while (threeobject.parent && visible) {
-            threeobject = threeobject.parent;
-            visible = threeobject.visible;
-          }
-          // if it's not visible, remove it
-          !visible && idsToRemove.push(baseObject.uuid);
-        }
-        return visible;
-      });
-      idsToRemove.forEach((id) => {
-        const outlineObject = this.registry.getObjectFromRegistry(id);
-        this.outlineScene.remove(outlineObject);
-        // remove from inlet too
-      });
-      this.renderScene();
-    }
-  }
 
-  // i know this is can be done by implementing a color buffer, with each color matching one
-  // object
-  getClickedReference(
-    clientX: number,
-    clientY: number,
-    objectsToCheck: Object3D[]
-  ): SceneClickReference {
-    if (this.destroyed || !this.camera) {
+    if (!namesToVisibility || Object.keys(namesToVisibility).length === 0) {
       return;
     }
-    //FIXME(chab) ideally we should recompute the objectsToCheck array for better performance
-    if (!objectsToCheck || objectsToCheck.length === 0) {
-      return;
-    }
-    const size = new THREE.Vector2(this.cachedMountNodeSize.width, this.cachedMountNodeSize.height);
-    this.raycaster.setFromCamera(getThreeScreenCoordinate(size, clientX, clientY), this.camera);
-    const intersects = this.raycaster.intersectObjects(objectsToCheck, true);
-    if (intersects.length > 0) {
-      // we catch the first object that the ray touches
-      let point = intersects[0].point;
-      const screenPoint = getScreenCoordinate(this.cachedMountNodeSize, point, this.camera);
-      const finalPoint = moveAndUnprojectPoint(this.cachedMountNodeSize, screenPoint, this.camera, {
-        x: 0,
-        y: -30
-      });
-      const info = {
-        point: finalPoint,
-        object: this.getParentObject(intersects[0].object)
-      };
-      return info;
-    }
-    return null;
-  }
 
-  getParentObject(object: Object3D): { sceneObject: Object3D; jsonObject: SceneJsonLike } | null {
-    if (!object.parent || !object.parent.visible || !object.visible) {
-      return null;
-    }
-    if (!this.objectDictionnary[object.id]) {
-      return this.getParentObject(object.parent);
-    } else {
-      return { sceneObject: object, jsonObject: this.objectDictionnary[object.id] };
-    }
+    Object.keys(namesToVisibility).forEach((objName) => {
+      const obj = this.scene.getObjectByName(objName);
+      if (obj) {
+        obj.visible = Boolean(namesToVisibility[objName]);
+      }
+    });
+    this.selectionController.removeInvisibleSelections((id) => this.computeIdToThree[id]);
+    this.renderScene();
   }
 
   public enableDebug(debugEnabled: boolean, node: Element) {
     if (!debugEnabled) {
-      if (!this.debugHelper) {
-        //
-      } else {
-        this.debugHelper.onDestroy();
-        this.debugHelper = null as unknown as DebugHelper;
-      }
-    } else {
-      if (this.debugHelper) {
-        //
-      } else {
-        this.debugDOMElement = node;
-        this.debugHelper = this.getHelper();
-        this.debugHelper.render();
-      }
+      this.destroyDebugHelper();
+      return;
+    }
+
+    if (!this.debugHelper) {
+      this.debugDOMElement = node;
+      this.debugHelper = this.getHelper();
+      this.debugHelper.render();
     }
   }
 
   public removeListener() {
+    this.removeEventListeners();
+  }
+
+  private removeEventListeners() {
     const domElement = this.renderer?.domElement;
     window.removeEventListener('resize', this.windowListener, false);
-    domElement?.removeEventListener?.('mousemove', this.mouseMoveListener);
-    domElement?.removeEventListener?.('click', this.clickListener);
-    document.removeEventListener('mousemove', this.mouseTrackballUpdate, false);
+    if (domElement && this.interactionController) {
+      domElement.removeEventListener('mousemove', this.interactionController.mouseMoveListener);
+      domElement.removeEventListener('click', this.interactionController.clickListener);
+    }
+  }
+
+  private clearPendingControlInit() {
+    if (this.controlsInitTimer != null) {
+      clearTimeout(this.controlsInitTimer);
+      this.controlsInitTimer = null;
+    }
+  }
+
+  private destroyDebugHelper() {
+    this.debugHelper?.onDestroy();
+    this.debugHelper = null;
+  }
+
+  private destroyControllers() {
+    this.destroyDebugHelper();
+    this.inset?.onDestroy();
+    this.selectionController.destroy();
+    this.interactionController = null;
+    this.controlsController?.dispose();
+    this.controlsController = null;
+    this.controls = null;
+  }
+
+  private removeDomNode(node?: Element | null) {
+    node?.parentElement?.removeChild(node);
+  }
+
+  private removeDomRenderers() {
+    this.removeDomNode(this.labelRenderer?.domElement);
+    this.removeDomNode(this.renderer?.domElement);
+  }
+
+  private disposeRendererResources() {
+    if (this.renderer instanceof THREE.WebGLRenderer) {
+      this.renderer.forceContextLoss();
+      this.renderer.dispose();
+    }
   }
 
   // call this when the parent component is destroyed
@@ -881,39 +669,15 @@ export default class Scene {
       return;
     }
     this.destroyed = true;
-    if (this.controlsInitTimer != null) {
-      clearTimeout(this.controlsInitTimer);
-      this.controlsInitTimer = null;
-    }
+    this.clearPendingControlInit();
     this.computeIdToThree = {};
     this.threeUUIDTojsonObject = {};
-    this.removeListener();
-    this.debugHelper && this.debugHelper.onDestroy();
-    this.debugHelper = null as any;
-    this.inset?.onDestroy();
-    this.controls?.dispose();
-    this.controls = null;
-    disposeSceneHierarchy(this.scene);
-    // this.scene.dispose();
-    if (this.renderer instanceof THREE.WebGLRenderer) {
-      this.renderer.forceContextLoss();
-      this.renderer.dispose();
-    }
-    // remove CSS2D overlay
-    if (this.labelRenderer?.domElement?.parentElement) {
-      this.labelRenderer.domElement.parentElement.removeChild(this.labelRenderer.domElement);
-    }
-
-    // remove canvas/SVG
-    if (this.renderer?.domElement?.parentElement) {
-      this.renderer.domElement.parentElement.removeChild(this.renderer.domElement);
-    }
-    // this.renderer.domElement!.parentElement!.removeChild(this.renderer.domElement);
-    if (this.renderer) {
-      this.renderer.domElement = undefined as any;
-    }
-    this.renderer = null as any;
     this.stop();
+    this.removeEventListeners();
+    this.destroyControllers();
+    disposeSceneHierarchy(this.scene);
+    this.removeDomRenderers();
+    this.disposeRendererResources();
   }
 
   removeObjectByName(name: string) {
@@ -929,7 +693,7 @@ export default class Scene {
     if (!this.debugDOMElement) {
       throw new Error('Debug helper requested without a debug mount node');
     }
-    return new DebugHelper(
+    return createDebugController(
       this.debugDOMElement,
       this.scene,
       this.camera,
@@ -995,19 +759,7 @@ export default class Scene {
     if (this.destroyed || !this.scene) {
       return;
     }
-    let outlinedObject: any[] = [];
-    if (this.outlineScene.children.length > 0) {
-      outlinedObject = this.selectedJsonObjects.map((o: any) => o.id);
-      this.outlineScene.remove(...this.outlineScene.children);
-    }
-    if (outlinedObject.length > 0) {
-      this.outlineScene.remove(...this.outlineScene.children);
-      outlinedObject.forEach((id) => {
-        const three = this.computeIdToThree[id];
-        this.addClonedObject(three);
-        this.outlineScene.add(this.registry.getObjectFromRegistry(three.uuid));
-      });
-    }
+    this.selectionController.refreshOutline((id) => this.computeIdToThree[id]);
   }
 
   updateTime(time: number) {

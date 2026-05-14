@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { Children, cloneElement, isValidElement, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import { FaAngleDown, FaAngleUp } from 'react-icons/fa';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 export interface DropdownProps {
   id?: string;
@@ -109,7 +109,7 @@ export const Dropdown = ({
           {renderIcon(triggerIcon)}
           {triggerLabel ? <span>{triggerLabel}</span> : null}
           {!isArrowless ? (
-            <span className="ms-icon">{isUp ? <FaAngleUp /> : <FaAngleDown />}</span>
+            <span className="ms-icon">{isUp ? <ChevronUp /> : <ChevronDown />}</span>
           ) : null}
         </button>
       </div>

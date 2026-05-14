@@ -18,227 +18,229 @@ const HEAD_WIDTH = 0.14;
 const MIN_SIZE = 50;
 const DEFAULT_SIZE = 130;
 
-export class InsetHelper {
-  private insetCamera: THREE.OrthographicCamera;
-  private frontRotation: THREE.Euler;
-  private axisPadding = 0; // the space between the edge of the inset and the axis bounding box
-  private scene: THREE.Scene;
-  public helper?: THREE.CameraHelper;
-  private axis: THREE.Object3D;
+type InsetSceneJson = SceneJsonObject & Record<string, any>;
 
-  constructor(
-    private detailedObject: THREE.Object3D,
-    private axisJson: SceneJsonObject & Record<string, any>,
-    baseScene: THREE.Scene,
-    private origin: ThreePosition,
-    private cameraToFollow: THREE.Camera,
-    private threebuilder: ThreeBuilder,
-    private insetWidth = DEFAULT_SIZE,
-    private insetHeight = DEFAULT_SIZE,
-    private insetPadding = 0
-  ) {
-    this.axis = this.detailedObject;
-    this.insetCamera = new THREE.OrthographicCamera(-4, 4, 4, -4, -10, 10);
-    this.frontRotation = this.cameraToFollow.rotation.clone();
-    this.scene = getSceneWithBackground({ transparentBackground: true, background: '#ffffff' });
+export interface InsetController {
+  readonly helper?: THREE.CameraHelper;
+  setAxis(axis: THREE.Object3D, axisJson: InsetSceneJson): void;
+  updateViewportsize(size: number, padding: number): void;
+  showObject(selection: THREE.Object3D[]): void;
+  showAxis(): void;
+  updateSelectedObject(object: THREE.Object3D, objectJson: Partial<SceneJsonObject>): void;
+  render(renderer: THREE.WebGLRenderer | THREE.Renderer, origin: [number, number]): void;
+  getPadding(): number;
+  getSize(): number;
+  onDestroy(): void;
+}
 
-    const baseLights = baseScene.getObjectByName('lights');
-    if (!baseLights) {
-      console.warn('no lights in base scene');
-    } else {
-      this.scene.add(baseLights.clone(true));
-    }
-    if (this.detailedObject) {
-      this.scene.add(this.detailedObject);
-      this.setup();
-      this.helper = new THREE.CameraHelper(this.insetCamera);
-      this.helper.update();
-    }
-  }
-  private setup() {
-    if (!this.detailedObject) {
-      console.warn('setup should not be called if no detailedObject is there');
-      return;
-    }
-    // put back the detailedObject in its normal scale for the calculation
+type InsetState = {
+  detailedObject: THREE.Object3D;
+  axisJson: InsetSceneJson;
+  axis: THREE.Object3D;
+  origin: ThreePosition;
+  cameraToFollow: THREE.Camera;
+  insetWidth: number;
+  insetHeight: number;
+  insetPadding: number;
+  axisPadding: number;
+};
 
-    const box = new THREE.Box3().setFromObject(this.detailedObject);
-    const maxDimension = Math.max(
-      box.max.x - box.min.x,
-      box.max.y - box.min.y,
-      box.max.z - box.min.z
-    );
-    const [x, y, z] = this.origin;
-    this.insetCamera.position.set(x, y, z);
-    this.insetCamera.left = this.insetCamera.bottom = this.insetCamera.near = -maxDimension;
-    this.insetCamera.right = this.insetCamera.top = this.insetCamera.far = maxDimension;
-    this.insetCamera.rotation.set(
-      this.frontRotation.x,
-      this.frontRotation.y,
-      this.frontRotation.z,
-      this.frontRotation.order
-    );
-    this.insetCamera.zoom = 1;
-    this.insetCamera.updateProjectionMatrix();
+function makeObject(threebuilder: ThreeBuilder, objectJson: InsetSceneJson) {
+  const obj = new THREE.Object3D();
+  return threebuilder.makeObject(objectJson, obj);
+}
+
+function setupInsetCamera(
+  state: InsetState,
+  insetCamera: THREE.OrthographicCamera,
+  frontRotation: THREE.Euler
+) {
+  if (!state.detailedObject) {
+    console.warn('setup should not be called if no detailedObject is there');
+    return;
   }
 
-  setAxis(axis: THREE.Object3D, axisJson: SceneJsonObject & Record<string, any>) {
-    this.axis = axis;
-    this.axisJson = axisJson;
+  const box = new THREE.Box3().setFromObject(state.detailedObject);
+  const maxDimension = Math.max(
+    box.max.x - box.min.x,
+    box.max.y - box.min.y,
+    box.max.z - box.min.z
+  );
+  const [x, y, z] = state.origin;
+  insetCamera.position.set(x, y, z);
+  insetCamera.left = insetCamera.bottom = insetCamera.near = -maxDimension;
+  insetCamera.right = insetCamera.top = insetCamera.far = maxDimension;
+  insetCamera.rotation.set(
+    frontRotation.x,
+    frontRotation.y,
+    frontRotation.z,
+    frontRotation.order
+  );
+  insetCamera.zoom = 1;
+  insetCamera.updateProjectionMatrix();
+}
+
+function rescaleAxis(
+  state: InsetState,
+  insetCamera: THREE.OrthographicCamera,
+  threebuilder: ThreeBuilder
+) {
+  const box = new THREE.Box3().setFromObject(state.detailedObject);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  size.project(insetCamera);
+  const widthOnScreenBuffer = Math.max(size.x, size.y, size.z);
+  const width = (widthOnScreenBuffer / 2) * state.insetWidth;
+  const scale = (state.insetWidth / 2 - state.axisPadding * 2) / width;
+
+  const targetRadius = AXIS_RADIUS * (scale / 1.5);
+  const targetHeadLength = HEAD_AXIS_LENGTH * (scale / 1.5);
+  const targetWidth = HEAD_WIDTH * (scale / 1.5);
+  state.axisJson.contents = (state.axisJson.contents ?? []).map((item: InsetSceneJson) => ({
+    ...item,
+    radius: targetRadius,
+    headLength: targetHeadLength,
+    headWidth: targetWidth,
+  }));
+
+  state.detailedObject.remove(
+    state.detailedObject.children[0],
+    state.detailedObject.children[1],
+    state.detailedObject.children[2]
+  );
+  state.detailedObject.add(
+    makeObject(threebuilder, state.axisJson.contents[0]),
+    makeObject(threebuilder, state.axisJson.contents[1]),
+    makeObject(threebuilder, state.axisJson.contents[2])
+  );
+}
+
+export function createInsetController(
+  detailedObject: THREE.Object3D,
+  axisJson: InsetSceneJson,
+  baseScene: THREE.Scene,
+  origin: ThreePosition,
+  cameraToFollow: THREE.Camera,
+  threebuilder: ThreeBuilder,
+  insetWidth = DEFAULT_SIZE,
+  insetHeight = DEFAULT_SIZE,
+  insetPadding = 0
+): InsetController {
+  const insetCamera = new THREE.OrthographicCamera(-4, 4, 4, -4, -10, 10);
+  const frontRotation = cameraToFollow.rotation.clone();
+  const scene = getSceneWithBackground({ transparentBackground: true, background: '#ffffff' });
+  const state: InsetState = {
+    detailedObject,
+    axisJson,
+    axis: detailedObject,
+    origin,
+    cameraToFollow,
+    insetWidth,
+    insetHeight,
+    insetPadding,
+    axisPadding: 0,
+  };
+
+  const baseLights = baseScene.getObjectByName('lights');
+  if (!baseLights) {
+    console.warn('no lights in base scene');
+  } else {
+    scene.add(baseLights.clone(true));
   }
 
-  makeObject(object_json: SceneJsonObject & Record<string, any>) {
-    const obj = new THREE.Object3D();
+  let helper: THREE.CameraHelper | undefined;
 
-    return this.threebuilder.makeObject(object_json, obj);
+  if (state.detailedObject) {
+    scene.add(state.detailedObject);
+    setupInsetCamera(state, insetCamera, frontRotation);
+    helper = new THREE.CameraHelper(insetCamera);
+    helper.update();
   }
 
-  public updateViewportsize(size: number, padding: number) {
-    if (size == null || padding == null) {
-      console.warn('fallback to default settings when resizing');
-      return;
-    }
+  return {
+    get helper() {
+      return helper;
+    },
+    setAxis(axis, nextAxisJson) {
+      state.axis = axis;
+      state.axisJson = nextAxisJson;
+    },
+    updateViewportsize(size, padding) {
+      if (size == null || padding == null) {
+        console.warn('fallback to default settings when resizing');
+        return;
+      }
 
-    this.insetPadding = padding;
+      state.insetPadding = padding;
+      const resolvedSize = size < MIN_SIZE ? MIN_SIZE : size;
+      if (resolvedSize !== state.insetHeight) {
+        state.insetWidth = resolvedSize;
+        state.insetHeight = resolvedSize;
+        setupInsetCamera(state, insetCamera, frontRotation);
+      }
+    },
+    showObject(selection) {
+      const object = new THREE.Object3D();
+      object.add(
+        ...selection.map((item) => {
+          const clone = item.clone();
+          clone.matrixAutoUpdate = false;
+          return clone;
+        })
+      );
+      this.updateSelectedObject(object, {});
+    },
+    showAxis() {
+      if (state.detailedObject === state.axis) {
+        return;
+      }
+      this.updateSelectedObject(state.axis, state.axisJson);
+    },
+    updateSelectedObject(object, objectJson) {
+      scene.remove(state.detailedObject);
+      state.detailedObject = object;
+      scene.add(state.detailedObject);
 
-    if (size < MIN_SIZE) {
-      size = MIN_SIZE;
-    }
-    if (size != this.insetHeight) {
-      this.insetWidth = this.insetHeight = size;
-      this.setup();
-    }
-  }
+      if (objectJson.origin) {
+        state.origin = objectJson.origin;
+      } else {
+        const box = new THREE.Box3().setFromObject(state.detailedObject);
+        let center = new THREE.Vector3();
+        box.getCenter(center);
+        center = object.localToWorld(center);
+        state.origin = [center.x, center.y, center.z];
+      }
 
-  public showObject(selection: THREE.Object3D[]) {
-    const object = new THREE.Object3D();
-    object.add(
-      ...selection.map((a) => {
-        const b = a.clone();
-        b.matrixAutoUpdate = false;
-        return b;
-      })
-    );
-    this.updateSelectedObject(object, {});
-  }
+      setupInsetCamera(state, insetCamera, frontRotation);
+      const axisContents = state.axisJson.contents;
+      if (state.detailedObject === state.axis && Array.isArray(axisContents) && axisContents.length >= 3) {
+        rescaleAxis(state, insetCamera, threebuilder);
+      }
+    },
+    render(renderer, [x, y]) {
+      if (!(renderer instanceof THREE.WebGLRenderer) || !state.detailedObject) {
+        return;
+      }
 
-  public showAxis() {
-    if (this.detailedObject === this.axis) {
-      return;
-    }
-    this.updateSelectedObject(this.axis, this.axisJson);
-  }
-
-  public updateSelectedObject(object: THREE.Object3D, objectJson: Partial<SceneJsonObject>) {
-    this.scene.remove(this.detailedObject);
-    this.detailedObject = object;
-    this.scene.add(this.detailedObject);
-    if (objectJson.origin) {
-      this.origin = objectJson.origin;
-    } else {
-      const box = new THREE.Box3().setFromObject(this.detailedObject);
-      let center = new THREE.Vector3();
-      box.getCenter(center);
-      center = object.localToWorld(center);
-      this.origin = [center.x, center.y, center.z];
-    }
-
-    // things work a bit by luck.. when we copy the object, we loose the parent frame
-    // that's why the camera seems misplaced in the inset helper.. it's in fact because
-    // the object itself is not in the same position in the inset view..
-    // things looks correct in the debug view when there is no parent transformation
-    // we'll need to bring back the parent transformation when cloning the object
-    this.setup();
-  }
-
-  public render(renderer: THREE.WebGLRenderer | THREE.Renderer, [x, y]: [number, number]) {
-    // NOTE(chab) this will not work with the SVG renderer, as it has no notion of
-    // viewport, if we want the SVG render to work, we'll need to have a separated renderer
-    if (renderer instanceof THREE.WebGLRenderer && this.detailedObject) {
       renderer.setScissorTest(true);
-      // everything outside should be discarded
-      renderer.setScissor(x, y, this.insetWidth, this.insetHeight);
-      renderer.setViewport(x, y, this.insetWidth, this.insetHeight);
-      this.insetCamera.rotation.copy(this.cameraToFollow.rotation);
-      this.insetCamera.updateProjectionMatrix();
-      renderer.render(this.scene, this.insetCamera);
-      renderer.clearDepth(); // important! clear the depth buffer
+      renderer.setScissor(x, y, state.insetWidth, state.insetHeight);
+      renderer.setViewport(x, y, state.insetWidth, state.insetHeight);
+      insetCamera.rotation.copy(state.cameraToFollow.rotation);
+      insetCamera.updateProjectionMatrix();
+      renderer.render(scene, insetCamera);
+      renderer.clearDepth();
       renderer.setScissorTest(false);
-    }
-  }
-
-  public getPadding() {
-    return this.insetPadding;
-  }
-
-  public getSize() {
-    return this.insetWidth;
-  }
-
-  public onDestroy() {
-    disposeSceneHierarchy(this.scene);
-    // this.scene.dispose();
-    // Note ONLY USE THIS PATTERN IN DISPOSAL METHOD
-    this.cameraToFollow = (null as unknown) as THREE.Camera;
-    this.insetCamera = (null as unknown) as THREE.OrthographicCamera;
-    this.detailedObject = (null as unknown) as THREE.Object3D;
-  }
-
-  // TODO(chab) let's do something simple like having a width of 5 px
-  private rescaleAxis() {
-    // calculate scale
-    const box = new THREE.Box3().setFromObject(this.detailedObject);
-    let center = new THREE.Vector3(
-      (box.min.x + box.max.x) / 2,
-      (box.min.y + box.max.y) / 2,
-      (box.min.z + box.max.z) / 2
-    );
-    let extents = new THREE.Vector3(
-      (box.max.x - box.min.x) / 2,
-      (box.max.y - box.min.y) / 2,
-      (box.max.z - box.min.z) / 2
-    );
-
-    const a = center
-      .clone()
-      .add(new THREE.Vector3(-extents.x, -extents.y, -extents.z))
-      .project(this.insetCamera);
-    const b = center
-      .clone()
-      .add(new THREE.Vector3(extents.x, -extents.y, extents.z))
-      .project(this.insetCamera);
-
-    // we should perform the calculation for both width and height, and take the smallest one
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    size.project(this.insetCamera);
-    let widthOnScreenBuffer = Math.max(size.x, size.y, size.z);
-    const width = (widthOnScreenBuffer / 2) * this.insetWidth;
-    // the axis is always centered, so the max extent of its box should match half of the screen
-    // ( e.g consider a edge case of all axis point in the same direction, if the BB
-    // take all the size, it will overflow)
-    const scale = (this.insetWidth / 2 - this.axisPadding * 2) / width;
-    // maybe we should do is to consider the origin in the axis, in the bounding box
-    // and find the largest vector from center - bbextent, this will tell us how much
-    // the axis need from the center to one point
-
-    // manually rescale axis properties, so it looks not too thin
-    const targetRadius = AXIS_RADIUS * (scale / 1.5);
-    const targetHeadLength = HEAD_AXIS_LENGTH * (scale / 1.5);
-    const targetWidth = HEAD_WIDTH * (scale / 1.5);
-    // we assume an axis is made of three arrows and one sphere
-    this.axisJson.contents = (this.axisJson.contents ?? []).map((a: SceneJsonObject & Record<string, any>) => {
-      return { ...a, radius: targetRadius, headLength: targetHeadLength, headWidth: targetWidth };
-    });
-    this.detailedObject.remove(
-      this.detailedObject.children[0],
-      this.detailedObject.children[1],
-      this.detailedObject.children[2]
-    );
-    this.detailedObject.add(
-      this.makeObject(this.axisJson.contents[0]),
-      this.makeObject(this.axisJson.contents[1]),
-      this.makeObject(this.axisJson.contents[2])
-    );
-  }
+    },
+    getPadding() {
+      return state.insetPadding;
+    },
+    getSize() {
+      return state.insetWidth;
+    },
+    onDestroy() {
+      disposeSceneHierarchy(scene);
+      state.cameraToFollow = null as unknown as THREE.Camera;
+      state.detailedObject = null as unknown as THREE.Object3D;
+    },
+  };
 }

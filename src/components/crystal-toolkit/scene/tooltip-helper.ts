@@ -7,77 +7,99 @@ type TooltipJson = {
   tooltip?: string;
 } & Record<string, any>;
 
-export class TooltipHelper {
-  private tooltipedJsonObject: TooltipJson | null = null;
-  private tooltipedThreeObject: THREE.Object3D | null = null;
-  public readonly tooltip;
+type TooltipState = {
+  tooltipedJsonObject: TooltipJson | null;
+  tooltipedThreeObject: THREE.Object3D | null;
+};
 
-  constructor() {
-    const label = document.createElement('div');
-    label.className = 'ms-tooltiptext';
-    const hoverLabel = document.createElement('span');
-    hoverLabel.className = '';
-    label.appendChild(hoverLabel);
-    const labelObject = new CSS2DObject(label);
-    this.tooltip = labelObject;
-    this.moveOffscreen();
+const OFFSCREEN_COORDINATE = Number.MAX_SAFE_INTEGER;
+
+const getTooltipText = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+
+const moveTooltipOffscreen = (tooltip: CSS2DObject) => {
+  tooltip.position.set(OFFSCREEN_COORDINATE, OFFSCREEN_COORDINATE, OFFSCREEN_COORDINATE);
+};
+
+const setMeshColor = (mesh: THREE.Mesh, colorValue: string) => {
+  const material = mesh.material;
+  if (Array.isArray(material)) {
+    material.forEach((item) => {
+      if ('color' in item) {
+        (item as THREE.MeshStandardMaterial).color = new THREE.Color(colorValue);
+      }
+    });
+    return;
   }
-
-  private setMeshColor(mesh: THREE.Mesh, colorValue: string) {
-    const material = mesh.material;
-    if (Array.isArray(material)) {
-      material.forEach((item) => {
-        if ('color' in item) {
-          (item as THREE.MeshStandardMaterial).color = new THREE.Color(colorValue);
-        }
-      });
-      return;
-    }
-    if ('color' in material) {
-      (material as THREE.MeshStandardMaterial).color = new THREE.Color(colorValue);
-    }
+  if ('color' in material) {
+    (material as THREE.MeshStandardMaterial).color = new THREE.Color(colorValue);
   }
+};
 
-  public updateTooltip(point: THREE.Vector3, jsonObject: TooltipJson, sceneObject: THREE.Object3D) {
-    if (!(this.tooltipedJsonObject === jsonObject)) {
-      sceneObject.children.forEach((c) => {
-        if (c instanceof THREE.Mesh && typeof jsonObject.color === 'string') {
-          const color = rgb(jsonObject.color).brighter(1);
-          this.setMeshColor(c, color.formatHex());
-        }
-      });
-      this.tooltipedJsonObject = jsonObject;
-      this.tooltipedThreeObject = sceneObject;
+const updateHighlightedMeshes = (
+  sceneObject: THREE.Object3D,
+  color: string,
+  brighten = false
+) => {
+  const resolvedColor = brighten ? rgb(color).brighter(1).formatHex() : color;
+  sceneObject.children.forEach((child) => {
+    if (child instanceof THREE.Mesh) {
+      setMeshColor(child, resolvedColor);
     }
-    this.tooltip.position.x = point.x;
-    this.tooltip.position.y = point.y;
-    this.tooltip.position.z = point.z;
-    // TODO(chab) support markdown ?
-    this.tooltip.element.textContent = typeof jsonObject.tooltip === 'string' ? jsonObject.tooltip : '';
-  }
+  });
+};
 
-  /**
-   *
-   * Return true if the tooltip was removed
-   */
-  public hideTooltipIfNeeded(): boolean {
-    if (this.tooltipedThreeObject) {
-      this.tooltipedThreeObject.children.forEach((c) => {
-        if (c instanceof THREE.Mesh && typeof this.tooltipedJsonObject?.color === 'string') {
-          this.setMeshColor(c, this.tooltipedJsonObject.color);
+export interface TooltipController {
+  readonly tooltip: CSS2DObject;
+  updateTooltip(point: THREE.Vector3, jsonObject: TooltipJson, sceneObject: THREE.Object3D): void;
+  hideTooltipIfNeeded(): boolean;
+}
+
+export function createTooltipController(): TooltipController {
+  const label = document.createElement('div');
+  label.className = 'ms-tooltiptext';
+  const hoverLabel = document.createElement('span');
+  label.appendChild(hoverLabel);
+
+  const tooltip = new CSS2DObject(label);
+  const state: TooltipState = {
+    tooltipedJsonObject: null,
+    tooltipedThreeObject: null
+  };
+
+  moveTooltipOffscreen(tooltip);
+
+  return {
+    tooltip,
+    updateTooltip(point, jsonObject, sceneObject) {
+      const tooltipText = getTooltipText(jsonObject.tooltip);
+      if (!tooltipText) {
+        this.hideTooltipIfNeeded();
+        return;
+      }
+
+      if (state.tooltipedJsonObject !== jsonObject) {
+        if (typeof jsonObject.color === 'string') {
+          updateHighlightedMeshes(sceneObject, jsonObject.color, true);
         }
-      });
-      this.tooltipedThreeObject = null;
-      this.tooltipedJsonObject = null;
-      this.moveOffscreen();
+        state.tooltipedJsonObject = jsonObject;
+        state.tooltipedThreeObject = sceneObject;
+      }
+      tooltip.position.copy(point);
+      tooltip.element.textContent = tooltipText;
+    },
+    hideTooltipIfNeeded() {
+      if (!state.tooltipedThreeObject) {
+        return false;
+      }
+
+      if (typeof state.tooltipedJsonObject?.color === 'string') {
+        updateHighlightedMeshes(state.tooltipedThreeObject, state.tooltipedJsonObject.color, false);
+      }
+
+      state.tooltipedThreeObject = null;
+      state.tooltipedJsonObject = null;
+      moveTooltipOffscreen(tooltip);
       return true;
     }
-    return false;
-  }
-
-  private moveOffscreen() {
-    this.tooltip.translateX(Number.MAX_SAFE_INTEGER);
-    this.tooltip.translateY(Number.MAX_SAFE_INTEGER);
-    this.tooltip.translateZ(Number.MAX_SAFE_INTEGER);
-  }
+  };
 }

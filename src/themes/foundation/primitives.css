@@ -143,12 +143,13 @@
 :where(.mcv-theme, .mcv-root) .ms-delete {
   appearance: none;
   border: 0;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.18);
+  border-radius: 4px;
+  background: transparent;
   color: transparent;
   width: 2rem;
   height: 2rem;
   cursor: pointer;
+  transition: background-color 160ms ease;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-modal-close::before,
@@ -184,6 +185,6 @@
 :where(.mcv-theme, .mcv-root) .ms-modal-close:focus-visible,
 :where(.mcv-theme, .mcv-root) .ms-delete:hover,
 :where(.mcv-theme, .mcv-root) .ms-delete:focus-visible {
-  background: rgba(15, 23, 42, 0.28);
+  background: rgba(15, 23, 42, 0.08);
   outline: none;
 }

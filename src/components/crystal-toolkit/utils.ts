@@ -89,29 +89,40 @@ export interface Action<T, P> {
   payload: P;
 }
 
-export class ObjectRegistry {
-  private objectRegistry: Record<string, THREE.Object3D> = {};
-  clear(): void {
-    this.objectRegistry = {};
-  }
-  addToObjectRegisty(o: THREE.Object3D): void {
-    this.objectRegistry[o.uuid] = o;
-  }
-  deleteObject(o: THREE.Object3D) {
-    if (!this.registryHasObject(o)) {
-      console.warn('Object does not exits');
+export interface ObjectRegistryApi {
+  clear(): void;
+  addToObjectRegisty(o: THREE.Object3D): void;
+  deleteObject(o: THREE.Object3D): void;
+  registryHasObject(o: THREE.Object3D): boolean;
+  getObjectFromRegistry(uuid: string): THREE.Object3D;
+}
+
+export function createObjectRegistry(): ObjectRegistryApi {
+  let objectRegistry: Record<string, THREE.Object3D> = {};
+
+  return {
+    clear() {
+      objectRegistry = {};
+    },
+    addToObjectRegisty(o) {
+      objectRegistry[o.uuid] = o;
+    },
+    deleteObject(o) {
+      if (!objectRegistry[o.uuid]) {
+        console.warn('Object does not exits');
+      }
+      delete objectRegistry[o.uuid];
+    },
+    registryHasObject(o) {
+      return Boolean(objectRegistry[o.uuid]);
+    },
+    getObjectFromRegistry(uuid) {
+      if (!objectRegistry[uuid]) {
+        console.warn('Non existent object', uuid);
+      }
+      return objectRegistry[uuid];
     }
-    delete this.objectRegistry[o.uuid];
-  }
-  registryHasObject(o: THREE.Object3D): boolean {
-    return !!this.objectRegistry[o.uuid];
-  }
-  getObjectFromRegistry(uuid: string): THREE.Object3D {
-    if (!this.objectRegistry[uuid]) {
-      console.warn('Non existent object', uuid);
-    }
-    return this.objectRegistry[uuid];
-  }
+  };
 }
 
 /**

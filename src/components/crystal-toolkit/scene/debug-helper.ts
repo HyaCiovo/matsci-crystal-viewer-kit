@@ -1,136 +1,160 @@
 import * as THREE from 'three';
-import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { CameraHelper } from 'three';
-import { disposeSceneHierarchy } from '../utils';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { disposeSceneHierarchy } from '../utils';
 
 const DEBUG_SIZE = 500;
-
-/**
- *
- * In the current implementation, this is destroyed/re-created on the fly.
- * We could wait for the first instantiation, and then just remove the node
- * and stop rendering.
- *
- * This will allow us to have a simpler management of the object in the scenes
- *
- */
-
 const background = new THREE.Color('#000000');
 
-export class DebugHelper {
-  private cameraHelper: THREE.CameraHelper;
-  private debugCamera: THREE.Camera;
-  private debugRenderer: THREE.WebGLRenderer; // no SVG
-  private controls: { dispose(): void } | null = null;
+type DebugBuilder = {
+  makeLightsHelper: (lights: any[]) => THREE.Object3D;
+};
 
-  private showAxis = true;
-  private showGrid = true;
-  private showLights = false;
+type DebugControls = {
+  dispose(): void;
+};
 
-  private axis: THREE.AxesHelper;
-  private grid: THREE.GridHelper;
-  private lights: THREE.Object3D = new THREE.Object3D();
-  private insetHelper: THREE.Object3D;
+type DebugControllerState = {
+  controls: DebugControls | null;
+  showAxis: boolean;
+  showGrid: boolean;
+  showLights: boolean;
+};
 
-  constructor(
-    private mountNode: Element,
-    private scene: THREE.Scene,
-    private cameraToTrack: THREE.Camera,
-    private settings: Record<string, any>,
-    private builder: { makeLightsHelper: (lights: any[]) => THREE.Object3D },
-    insetCameraHelper?: THREE.CameraHelper
-  ) {
-    if (!mountNode) {
-      console.error('No mount node passed for the debug view');
-    }
-    this.debugRenderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-    });
-    (this.debugRenderer as any).gammaFactor = 2.2;
-    this.debugRenderer.setSize(DEBUG_SIZE, DEBUG_SIZE);
+export interface DebugController {
+  render(): void;
+  onDestroy(): void;
+}
 
-    // FIXME
-    this.mountNode.appendChild(this.debugRenderer.domElement);
-    this.cameraHelper = new THREE.CameraHelper(cameraToTrack);
-    this.scene.add(this.cameraHelper);
+function createDebugRenderer() {
+  const debugRenderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: true,
+  });
+  (debugRenderer as any).gammaFactor = 2.2;
+  debugRenderer.setSize(DEBUG_SIZE, DEBUG_SIZE);
+  return debugRenderer;
+}
 
-    this.axis = new THREE.AxesHelper(100);
-    (this.axis.material as LineMaterial).linewidth = 2.5; // this does not work due to limitation
-    this.grid = new THREE.GridHelper(20, 20); // size 10, division 10
+function createDebugCamera() {
+  const debugCamera = new THREE.PerspectiveCamera(
+    60,
+    1,
+    0.1,
+    300
+  );
+  debugCamera.position.set(10, 20, -10);
+  debugCamera.lookAt(0, 0, 0);
+  return debugCamera;
+}
 
-    const lights = this.scene.getObjectByName('lights');
-    if (!lights || lights.children.length === 0) {
-      console.warn('No lights defined in the scene');
-    } else {
-      this.lights = this.builder.makeLightsHelper(lights.children);
-    }
+function setHelperObjectVisibility(
+  isVisible: boolean,
+  cameraHelper: THREE.CameraHelper,
+  axis: THREE.AxesHelper,
+  grid: THREE.GridHelper,
+  lights: THREE.Object3D,
+  insetHelper: THREE.Object3D
+) {
+  cameraHelper.visible = isVisible;
+  axis.visible = isVisible;
+  grid.visible = isVisible;
+  lights.visible = isVisible;
+  insetHelper.visible = isVisible;
+}
 
-    this.showAxis && this.scene.add(this.axis);
-    this.showGrid && this.scene.add(this.grid); // TODO( three grids on each word axis )
-    this.showLights && this.scene.add(this.lights);
-
-    this.debugCamera = new THREE.PerspectiveCamera(
-      60, // fov
-      1, // aspect
-      0.1, // near
-      300 // far
-    );
-    this.debugCamera.position.set(10, 20, -10);
-    this.debugRenderer.setSize(DEBUG_SIZE, DEBUG_SIZE);
-    this.debugRenderer.setViewport(0, 0, DEBUG_SIZE, DEBUG_SIZE);
-    this.debugCamera.lookAt(0, 0, 0);
-    const controls2 = new OrbitControls(this.debugCamera, this.debugRenderer.domElement);
-    controls2.target.set(0, 5, 0);
-    controls2.update();
-    // we are assuming a static scene
-    // only re-render when scene is rotated
-    controls2.addEventListener('change', () => {
-      this.render();
-    });
-    controls2.addEventListener('start', () => {
-      controls2.update();
-    });
-    controls2.addEventListener('end', () => {
-      controls2.update();
-    });
-    this.controls = controls2;
-    this.insetHelper = new THREE.Object3D();
-    insetCameraHelper && this.insetHelper.add(insetCameraHelper);
-    this.scene.add(this.insetHelper);
+export function createDebugController(
+  mountNode: Element,
+  scene: THREE.Scene,
+  cameraToTrack: THREE.Camera,
+  _settings: Record<string, any>,
+  builder: DebugBuilder,
+  insetCameraHelper?: THREE.CameraHelper
+): DebugController {
+  if (!mountNode) {
+    console.error('No mount node passed for the debug view');
   }
 
-  public render() {
-    this.cameraHelper.update();
-    this.insetHelper.children[0] && (this.insetHelper.children[0] as CameraHelper).update();
-    const oldBackgroundColor = this.scene.background;
-    this.scene.background = background;
-    this.setHelperObjectVisibility(true);
-    this.debugRenderer.render(this.scene, this.debugCamera);
-    this.setHelperObjectVisibility(false);
-    this.scene.background = oldBackgroundColor;
+  const state: DebugControllerState = {
+    controls: null,
+    showAxis: true,
+    showGrid: true,
+    showLights: false,
+  };
+
+  const debugRenderer = createDebugRenderer();
+  mountNode.appendChild(debugRenderer.domElement);
+
+  const cameraHelper = new THREE.CameraHelper(cameraToTrack);
+  scene.add(cameraHelper);
+
+  const axis = new THREE.AxesHelper(100);
+  (axis.material as LineMaterial).linewidth = 2.5;
+
+  const grid = new THREE.GridHelper(20, 20);
+  const lightsInScene = scene.getObjectByName('lights');
+  const lights =
+    !lightsInScene || lightsInScene.children.length === 0
+      ? new THREE.Object3D()
+      : builder.makeLightsHelper(lightsInScene.children);
+
+  if (!lightsInScene || lightsInScene.children.length === 0) {
+    console.warn('No lights defined in the scene');
   }
 
-  private setHelperObjectVisibility(isVisible: boolean) {
-    this.cameraHelper.visible = isVisible;
-    this.axis.visible = isVisible;
-    this.grid.visible = isVisible;
-    this.lights.visible = isVisible;
-    this.insetHelper.visible = isVisible;
-  }
+  state.showAxis && scene.add(axis);
+  state.showGrid && scene.add(grid);
+  state.showLights && scene.add(lights);
 
-  public onDestroy() {
-    disposeSceneHierarchy(this.scene);
-    this.scene.remove(this.cameraHelper);
-    this.axis && this.scene.remove(this.axis);
-    this.grid && this.scene.remove(this.grid);
-    (this.scene as any).dispose?.();
-    this.controls?.dispose();
-    this.debugRenderer.forceContextLoss();
-    this.debugRenderer.dispose();
-    this.debugRenderer.domElement!.parentElement!.removeChild(this.debugRenderer.domElement);
-    this.debugRenderer.domElement = (undefined as unknown) as any;
-    this.debugRenderer = (null as unknown) as any;
+  const debugCamera = createDebugCamera();
+  debugRenderer.setSize(DEBUG_SIZE, DEBUG_SIZE);
+  debugRenderer.setViewport(0, 0, DEBUG_SIZE, DEBUG_SIZE);
+
+  const controls = new OrbitControls(debugCamera, debugRenderer.domElement);
+  controls.target.set(0, 5, 0);
+  controls.update();
+  controls.addEventListener('change', () => {
+    controller.render();
+  });
+  controls.addEventListener('start', () => {
+    controls.update();
+  });
+  controls.addEventListener('end', () => {
+    controls.update();
+  });
+  state.controls = controls;
+
+  const insetHelper = new THREE.Object3D();
+  if (insetCameraHelper) {
+    insetHelper.add(insetCameraHelper);
   }
+  scene.add(insetHelper);
+
+  const controller: DebugController = {
+    render() {
+      cameraHelper.update();
+      insetHelper.children[0] && (insetHelper.children[0] as CameraHelper).update();
+      const oldBackgroundColor = scene.background;
+      scene.background = background;
+      setHelperObjectVisibility(true, cameraHelper, axis, grid, lights, insetHelper);
+      debugRenderer.render(scene, debugCamera);
+      setHelperObjectVisibility(false, cameraHelper, axis, grid, lights, insetHelper);
+      scene.background = oldBackgroundColor;
+    },
+    onDestroy() {
+      disposeSceneHierarchy(scene);
+      scene.remove(cameraHelper);
+      scene.remove(axis);
+      scene.remove(grid);
+      (scene as any).dispose?.();
+      state.controls?.dispose();
+      debugRenderer.forceContextLoss();
+      debugRenderer.dispose();
+      debugRenderer.domElement.parentElement?.removeChild(debugRenderer.domElement);
+      (debugRenderer as unknown as { domElement?: HTMLCanvasElement }).domElement = undefined;
+    },
+  };
+
+  return controller;
 }

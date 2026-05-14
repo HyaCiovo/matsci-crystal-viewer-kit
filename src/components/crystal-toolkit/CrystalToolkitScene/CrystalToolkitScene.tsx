@@ -1,62 +1,41 @@
 import React, {
-  MutableRefObject,
   ReactNode,
-  useContext,
   useEffect,
-  useReducer,
+  useId,
   useRef,
   useState
 } from 'react';
 import Scene from '../scene/Scene';
-import { subscribe } from '../scene/download-event';
 import {
   AnimationStyle,
   DEBUG_STYLE,
-  DEFAULT_SCENE_SIZE,
   ExportType,
   MOUNT_DEBUG_NODE_CLASS,
   MOUNT_NODE_CLASS,
   MOUNT_NODE_STYLE
 } from '../scene/constants';
-import { CameraContext } from '../CameraContextProvider';
-import {
-  cameraReducer,
-  CameraReducerAction,
-  CameraState,
-  initialState
-} from '../CameraContextProvider/camera-reducer';
-import { usePrevious } from '../../../utils/hooks';
-import toDataUrl from 'svgtodatauri';
-import * as THREE from 'three';
-import { WebGLRenderer } from 'three';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import { USDZExporter } from 'three/examples/jsm/exporters/USDZExporter.js';
+import { CameraReducerAction, CameraState } from '../CameraContextProvider/camera-reducer';
 import useResizeObserver from 'use-resize-observer';
 import { Enlargeable } from '../../data-display/Enlargeable';
-import { FaCamera, FaCogs, FaCompress, FaExpand, FaFileExport, FaUndo } from 'react-icons/fa';
-import { ButtonBar } from '../../data-display/ButtonBar';
-import { Dropdown } from '../../navigation/Dropdown';
 import clsx from 'clsx';
-import { Tooltip } from '../../data-display/Tooltip';
-import { v4 as uuidv4 } from 'uuid';
 import { ModalCloseButton } from '../../data-display/Modal/ModalCloseButton/ModalCloseButton';
-import { downloadBlob, downloadJSON } from '../../../utils/download';
+import { downloadJSON } from '../../../utils/download';
 import { RangeSlider } from '../../data-entry/RangeSlider';
-import { ScenePosition } from '../scene/inset-helper';
 import {
   DEFAULT_CRYSTAL_TOOLKIT_SCENE_TEXTS,
   type CrystalToolkitSceneTexts
 } from '../sceneControlTexts';
 import { mergeTexts } from '../../../utils/text';
-
-const getSceneSize = (sceneSize?: number | string) =>
-  sceneSize ? sceneSize : DEFAULT_SCENE_SIZE;
-
-const hideTooltip = () => undefined;
-
-let ID_GENERATOR = 0;
-
-let originalCameraState: CameraState;
+import {
+  createSceneLifecycle,
+  useDismissiblePanel,
+  useSceneCameraSync,
+  useScenePanels,
+  useSceneSharedEffects
+} from '../sceneComponentShared';
+import { requestSceneExport } from '../sceneExport';
+import { getSceneSize, hasRenderableSceneData, hideTooltip } from '../sceneComponentUtils';
+import { SceneToolbar } from '../SceneToolbar';
 
 export interface CrystalToolkitSceneProps {
   /**
@@ -287,9 +266,9 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
    * Wrap mountNodeRef in a resize observer so that the scene
    * can resize properly even when the window size doesn't change
    */
-  const { width, height } = useResizeObserver<HTMLDivElement>({
+  useResizeObserver<HTMLDivElement>({
     ref: mountNodeRef,
-    onResize: ({ width, height }) => {
+    onResize: () => {
       if (scene.current) {
         scene.current.resizeRendererToDisplaySize();
       }
@@ -297,204 +276,78 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
   });
 
   const mountNodeDebugRef = useRef(null);
-  const componentId = useRef((++ID_GENERATOR).toString());
-  const previousAnimationSetting = usePrevious(props.animation);
   // we use a ref to keep a reference to the underlying scene
-  const scene: MutableRefObject<Scene | null> = useRef(null);
+  const scene = useRef<Scene | null>(null);
   const sceneSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
   const hasHandledInitialExpandedSync = useRef(false);
   const [expanded, setExpanded] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
-  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
-  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const settingsPanel = React.Children.map(props.children, (child, i) => (i === 0 ? child : null));
-  const hasSettingsPanel = settingsPanel && settingsPanel.length > 0;
-  const bottomPanel = React.Children.map(props.children, (child, i) => (i === 1 ? child : null));
-  const hasBottomPanel = bottomPanel && bottomPanel.length > 0;
-  const tooltipId = useRef(uuidv4()).current;
-
-  /**
-   * Handle saving image to png
-   * If using the SVGRenderer, convert SVG to canvas image first
-   * Set imageData prop to data uri
-   */
-  const setPngData = (sceneComponent: Scene) => {
-    const renderer = (sceneComponent as any).renderer;
-    if (renderer instanceof WebGLRenderer) {
-      // force a render (in case buffer has been cleared)
-      sceneComponent.renderScene();
-      const imageData = renderer.domElement.toDataURL('image/png');
-      const imageDataTimestamp = Date.now();
-      props.setProps({ imageData, imageDataTimestamp });
-      // wait for next event loop before rendering
-      setTimeout(() => {
-        sceneComponent.renderScene();
-      });
-    } else {
-      // SVGRenderer assumed
-      sceneComponent.renderScene();
-      toDataUrl((renderer as any).domElement, 'image/png', {
-        callback: function (imageData: string) {
-          const imageDataTimestamp = Date.now();
-          props.setProps({ imageData, imageDataTimestamp });
-        }
-      });
-    }
-  };
-
-  /**
-   * Handle saving image to collada file (.dae)
-   * Set imageData prop to data uri
-   */
-  const setGLTFData = (sceneComponent: Scene) => {
-    const gltfExporter = new GLTFExporter();
-    gltfExporter.parse(
-      sceneComponent.scene,
-      (gltf) => {
-        const blob = new Blob([JSON.stringify(gltf)], { type: 'model/vnd.gltf+json' });
-        downloadBlob(blob, 'crystal_toolkit_scene.gltf');
-      },
-      () => null
-    );
-  };
-
-  const setGLBData = (sceneComponent: Scene) => {
-    const gltfExporter = new GLTFExporter();
-    gltfExporter.parse(
-      sceneComponent.scene,
-      (gltf) => {
-        const blobPart: BlobPart = gltf instanceof ArrayBuffer ? gltf : JSON.stringify(gltf);
-        const blob = new Blob([blobPart], { type: 'model/gltf-binary' });
-        downloadBlob(blob, 'crystal_toolkit_scene.glb');
-      },
-      () => null,
-      { binary: true }
-    );
-  }; 
-
-  const setUSDZData = async (sceneComponent: Scene) => {
-    const usdzExporter = new USDZExporter();
-    const arrayBuffer = (await usdzExporter.parse(sceneComponent.scene)) as unknown as ArrayBuffer;
-    const blob = new Blob([arrayBuffer as unknown as BlobPart], { type: 'model/vnd.usdz+zip' });
-    // consult "AR Quick Look" documentation for more information on why "ar" tag is included
-    // https://webkit.org/blog/8421/viewing-augmented-reality-assets-in-safari-for-ios/
-    // filename omitted to avoid "Download" dialog box on iOS devices; the intent with
-    // this option is to _show_ the file rather than download the file, however on non-iOS
-    // devices this may cause confusion
-    downloadBlob(blob, 'ar');
-  };
-
-  const requestImage = (filetype: ExportType, sceneComponent: Scene) => {
-    switch (filetype) {
-      case ExportType.png:
-        setPngData(sceneComponent);
-        break;
-      case ExportType.dae:
-        console.warn('DAE export is no longer supported in the React 18 package.');
-        break;
-      case ExportType.gltf:
-        setGLTFData(sceneComponent);
-        break;
-      case ExportType.glb:
-        setGLBData(sceneComponent);
-        break;
-      case ExportType.usdz:
-        setUSDZData(sceneComponent);
-        break;
-      default:
-        throw new Error('Unknown filetype.');
-    }
-  };
+  const { settingsPanel, bottomPanel, hasSettingsPanel, hasBottomPanel } = useScenePanels(
+    props.children
+  );
+  const { panelRef: settingsPanelRef, triggerRef: settingsTriggerRef } = useDismissiblePanel(
+    showSettingsPanel,
+    () => setShowSettingsPanel(false)
+  );
+  const { cameraDispatch, componentIdRef, resetCamera } = useSceneCameraSync({
+    scene,
+    setProps: props.setProps,
+    customCameraState: props.customCameraState
+  });
+  const tooltipId = useId().replace(/[:]/g, '-');
 
   // called after the component is mounted, so refs are correctly populated
   useEffect(() => {
-    const inletSize = props.inletSize ?? 130;
-    const inletPadding = props.inletPadding ?? 0;
-    const axisView = (props.axisView as ScenePosition | undefined) ?? ScenePosition.NW;
-    const _s = (scene.current = new Scene(
-      props.data,
-      mountNodeRef.current!,
-      props.settings,
-      inletSize,
-      inletPadding,
-      (objects) => {
-        if (props.onObjectClicked) {
-          props.onObjectClicked(objects);
-        }
+    const mountNode = mountNodeRef.current;
+    if (!mountNode) {
+      return;
+    }
+    const { scene: sceneInstance, subscription } = createSceneLifecycle({
+      data: props.data,
+      mountNode,
+      settings: props.settings,
+      inletSize: props.inletSize,
+      inletPadding: props.inletPadding,
+      mountNodeDebug: mountNodeDebugRef.current ?? undefined,
+      onObjectClicked: props.onObjectClicked,
+      onCameraChange: (position, quaternion, zoom) => {
+        cameraDispatch?.({
+          type: CameraReducerAction.NEW_POSITION,
+          payload: {
+            componentId: componentIdRef.current,
+            position,
+            quaternion,
+            zoom
+          }
+        });
       },
-      /** Sets dispatch function on the scene object */
-      (position, quaternion, zoom) => {
-        cameraDispatch &&
-          cameraDispatch({
-            type: CameraReducerAction.NEW_POSITION,
-            payload: {
-              componentId: componentId.current,
-              position,
-              quaternion,
-              zoom
-            }
-          });
-      },
-      mountNodeDebugRef.current ?? undefined
-    ));
-    /**
-     * I believe this can be removed because image requesting is now handled by
-     * the image dropdown.
-     * Unclear what the role of the observable is here.
-     */
-    const subscription = subscribe(({ filetype }) => requestImage(filetype, _s));
+      setProps: props.setProps
+    });
+    scene.current = sceneInstance;
     sceneSubscriptionRef.current = subscription;
     return () => {
-      // clean up code
       sceneSubscriptionRef.current?.unsubscribe();
       sceneSubscriptionRef.current = null;
-      _s.onDestroy();
+      sceneInstance.onDestroy();
       scene.current = null;
     };
   }, []);
 
-  // Note(chab) those hooks will be executed sequentially at mount time, and on change of the deps array elements
-  useEffect(() => {
-    if (!scene.current || !mountNodeDebugRef.current) {
-      return;
-    }
-    scene.current.enableDebug(props.debug!, mountNodeDebugRef.current);
-  }, [props.debug]);
-  // An interesting classical react issue that we fixed : look at the stories, we do not pass anymore an empty object,
-  // but a reference to an empty object, otherwise, it will be a different reference, and treated as a different object, thus
-  // triggering the effect
-  useEffect(() => {
-    if (!props.data || !(props.data as any).name || !(props.data as any).contents) {
-      console.warn(
-        'no data passed ( or missing name /content ), scene will not be updated',
-        props.data
-      );
-      return;
-    }
-
-    !!props.data && scene.current!.addToScene(props.data, true);
-    const sceneApi = scene.current as unknown as {
-      renderScene?: () => void;
-      resizeRendererToDisplaySize?: () => void;
-    };
-    sceneApi.renderScene?.();
-    sceneApi.resizeRendererToDisplaySize?.();
-    scene.current!.toggleVisibility(props.toggleVisibility as any);
-  }, [props.data]);
-  useEffect(
-    () => scene.current!.toggleVisibility(props.toggleVisibility as any),
-    [props.toggleVisibility]
-  );
-  useEffect(() => {
-    const inletSize = props.inletSize ?? 130;
-    const inletPadding = props.inletPadding ?? 0;
-    const axisView = (props.axisView as ScenePosition | undefined) ?? ScenePosition.NW;
-    scene.current!.updateInsetSettings(inletSize, inletPadding, axisView);
-  }, [props.inletSize, props.inletPadding, props.axisView]);
-
-  useEffect(() => {
-    scene.current!.resizeRendererToDisplaySize();
-  }, [props.sceneSize]);
+  useSceneSharedEffects({
+    scene,
+    mountNodeDebugRef,
+    debug: props.debug,
+    data: props.data,
+    toggleVisibility: props.toggleVisibility,
+    inletSize: props.inletSize,
+    inletPadding: props.inletPadding,
+    axisView: props.axisView,
+    sceneSize: props.sceneSize,
+    imageRequest: props.imageRequest,
+    setProps: props.setProps,
+    animation: props.animation,
+    bypassRenderingOnData: true
+  });
 
   useEffect(() => {
     if (!scene.current) {
@@ -515,22 +368,6 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
   }, [expanded]);
 
   useEffect(() => {
-    const { filetype } = props.imageRequest;
-    if (filetype) {
-      requestImage(filetype, scene.current!);
-    }
-  }, [props.imageRequest]);
-  
-  /**
-   * Manage camera state with context if component is wrapped in CameraContextProvider
-   * otherwise use a reducer to manage camera state locally
-   */
-  const cameraContext = useContext(CameraContext);
-  const [cameraReducerState, cameraReducerDispatch] = useReducer(cameraReducer, initialState);
-  const cameraState = cameraContext ? cameraContext.state : cameraReducerState;
-  const cameraDispatch = cameraContext ? cameraContext.dispatch : cameraReducerDispatch;
-
-  useEffect(() => {
     if (!hasHandledInitialExpandedSync.current) {
       hasHandledInitialExpandedSync.current = true;
       return;
@@ -548,48 +385,39 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
       sceneSubscriptionRef.current?.unsubscribe();
       scene.current?.onDestroy();
 
-      const inletSize = props.inletSize ?? 130;
-      const inletPadding = props.inletPadding ?? 0;
-      const axisView = (props.axisView as ScenePosition | undefined) ?? ScenePosition.NW;
-      const rebuiltScene = new Scene(
-        props.data,
-        mountNodeRef.current,
-        props.settings,
-        inletSize,
-        inletPadding,
-        (objects) => {
-          if (props.onObjectClicked) {
-            props.onObjectClicked(objects);
-          }
+      const { scene: rebuiltScene, subscription } = createSceneLifecycle({
+        data: props.data,
+        mountNode: mountNodeRef.current,
+        settings: props.settings,
+        inletSize: props.inletSize,
+        inletPadding: props.inletPadding,
+        mountNodeDebug: mountNodeDebugRef.current ?? undefined,
+        onObjectClicked: props.onObjectClicked,
+        onCameraChange: (position, quaternion, zoom) => {
+          cameraDispatch?.({
+            type: CameraReducerAction.NEW_POSITION,
+            payload: {
+              componentId: componentIdRef.current,
+              position,
+              quaternion,
+              zoom
+            }
+          });
         },
-        (position, quaternion, zoom) => {
-          cameraDispatch &&
-            cameraDispatch({
-              type: CameraReducerAction.NEW_POSITION,
-              payload: {
-                componentId: componentId.current,
-                position,
-                quaternion,
-                zoom
-              }
-            });
-        },
-        mountNodeDebugRef.current ?? undefined
-      );
+        setProps: props.setProps
+      });
 
       scene.current = rebuiltScene;
-      sceneSubscriptionRef.current = subscribe(({ filetype }) => requestImage(filetype, rebuiltScene));
-
+      sceneSubscriptionRef.current = subscription;
       if (props.debug && mountNodeDebugRef.current) {
         rebuiltScene.enableDebug(props.debug, mountNodeDebugRef.current);
       }
 
-      if (props.data && (props.data as any).name && (props.data as any).contents) {
+      if (hasRenderableSceneData(props.data)) {
         rebuiltScene.addToScene(props.data, true);
         rebuiltScene.toggleVisibility(props.toggleVisibility as any);
       }
 
-      rebuiltScene.updateInsetSettings(inletSize, inletPadding, axisView);
       rebuiltScene.resizeRendererToDisplaySize();
       rebuiltScene.renderScene();
 
@@ -603,86 +431,6 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
   }, [
     expanded
   ]);
-  if (cameraState) {
-    useEffect(() => {
-      props.setProps({ currentCameraState: cameraState });
-
-      if (cameraState && cameraState.position && cameraState.quaternion && cameraState.zoom) {
-        if (cameraState.setByComponentId !== componentId.current) {
-          scene.current!.updateCamera(
-            cameraState.position,
-            cameraState.quaternion,
-            cameraState.zoom
-          );
-        }
-        if (!originalCameraState) {
-          originalCameraState = { ...cameraState };
-        }
-      }
-    }, [cameraState.position]);
-  }
-
-  /**
-   * When customCameraState prop changes,
-   * update the camera to the new state
-   * and save the new state into the cameraState
-   */
-  useEffect(() => {
-    if (props.customCameraState) {
-      const { position: p, quaternion: q, zoom } = props.customCameraState;
-      /**
-       * Explicitly convert to Quaternion/Vector3 objects so that you
-       * can pass simple objects to customCameraState prop.
-       * (i.e. no need to use THREE.js constructors)
-       */
-      const quaternion = new THREE.Quaternion(q?.x, q?.y, q?.z, q?.w);
-      const position = new THREE.Vector3(p?.x, p?.y, p?.z);
-      scene.current!.updateCamera(position!, quaternion!, zoom!);
-      if (cameraDispatch) {
-        cameraDispatch({
-          type: CameraReducerAction.NEW_POSITION,
-          payload: {
-            componentId: componentId.current,
-            position,
-            quaternion,
-            zoom
-          }
-        });
-      }
-    }
-  }, [props.customCameraState]);
-
-  useEffect(() => {
-    props.animation && scene.current!.updateAnimationStyle(props.animation as AnimationStyle);
-  }, [props.animation]);
-
-  useEffect(() => {
-    if (!showSettingsPanel) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-
-      if (settingsPanelRef.current?.contains(target)) {
-        return;
-      }
-
-      if (settingsTriggerRef.current?.contains(target)) {
-        return;
-      }
-
-      setShowSettingsPanel(false);
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-    };
-  }, [showSettingsPanel]);
 
   const size = getSceneSize(props.sceneSize);
 
@@ -698,147 +446,24 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
       <div className="ms-scene" data-slot="viewer-shell">
         {props.showControls && (
           <>
-            <ButtonBar>
-              {props.showExpandButton && (
-                <Tooltip
-                  place="left"
-                  trigger={
-                    <button
-                      className="ms-button"
-                      onClick={() => {
-                        hideTooltip();
-                        setExpanded(!expanded);
-                      }}
-                    >
-                      {expanded ? <FaCompress /> : <FaExpand />}
-                    </button>
-                  }
-                >
-                  {expanded ? texts.exitFullScreen : texts.enterFullScreen}
-                </Tooltip>
-              )}
-              {hasSettingsPanel && (
-                <Tooltip
-                  place="left"
-                  trigger={
-                    <button
-                      data-tooltip-id={`settings-${tooltipId}`}
-                      className="ms-button"
-                      ref={settingsTriggerRef}
-                      onClick={() => setShowSettingsPanel(!showSettingsPanel)}
-                    >
-                      <FaCogs />
-                    </button>
-                  }
-                >
-                  {showSettingsPanel ? texts.hideSettings : texts.showSettings}
-                </Tooltip>
-              )}
-              {props.showPositionButton && (
-                <Tooltip
-                  place="left"
-                  trigger={
-                    <button
-                      className="ms-button"
-                      onClick={() => {
-                        if (
-                          originalCameraState?.position &&
-                          originalCameraState.quaternion &&
-                          originalCameraState.zoom
-                        ) {
-                          scene.current!.updateCamera(
-                            originalCameraState.position,
-                            originalCameraState.quaternion,
-                            originalCameraState.zoom
-                          );
-                        }
-                      }}
-                    >
-                      <FaUndo />
-                    </button>
-                  }
-                >
-                  {texts.returnToOriginalPosition}
-                </Tooltip>
-              )}
-              {props.showImageButton && (
-                <Tooltip
-                  place="left"
-                  trigger={
-                    <div onClick={() => hideTooltip()}>
-                      <Dropdown triggerIcon={<FaCamera />} isArrowless isRight>
-                        <p
-                          key={`image-export-png`}
-                          className="ms-dropdown-item"
-                          onClick={() => {
-                            requestImage(ExportType.png, scene.current!);
-                          }}
-                        >
-                          {texts.screenshotPng}
-                        </p>
-
-                        <p
-                          key={`image-export-gltf`}
-                          className="ms-dropdown-item"
-                          onClick={() => {
-                            requestImage(ExportType.gltf, scene.current!);
-                          }}
-                        >
-                          {texts.modelGltf}
-                        </p>
-
-
-                        <p
-                          key={`image-export-glb`}
-                          className="ms-dropdown-item"
-                          onClick={() => {
-                            requestImage(ExportType.glb, scene.current!);
-                          }}
-                        >
-                          {texts.modelGlb}
-                        </p>
-
-                        <p
-                          key={`image-export-udz`}
-                          className="ms-dropdown-item"
-                          onClick={() => {
-                            requestImage(ExportType.usdz, scene.current!);
-                          }}
-                        >
-                          {texts.augmentedRealityIosOnly}
-                        </p>
-                      </Dropdown>
-                    </div>
-                  }
-                >
-                  {texts.downloadVisualizationAs}
-                </Tooltip>
-              )}
-              {props.showExportButton && (
-                <Tooltip
-                  place="left"
-                  trigger={
-                    <div data-tooltip-id={`export-${tooltipId}`} onClick={() => hideTooltip()}>
-                      <Dropdown triggerIcon={<FaFileExport />} isArrowless isRight>
-                        {props.fileOptions?.map((option, i) => (
-                          <p
-                            key={`file-export-${i}`}
-                            className="ms-dropdown-item"
-                            onClick={() => {
-                              props.setProps({ fileType: option, fileTimestamp: Date.now() });
-                            }}
-                          >
-                            {option}
-                          </p>
-                        ))}
-                      </Dropdown>
-                    </div>
-                  }
-                >
-                  {texts.exportAs}
-                </Tooltip>
-              )}
-            </ButtonBar>
+            <SceneToolbar
+              expanded={expanded}
+              onToggleExpanded={() => setExpanded(!expanded)}
+              hasSettingsPanel={hasSettingsPanel}
+              showSettingsPanel={showSettingsPanel}
+              onToggleSettingsPanel={() => setShowSettingsPanel(!showSettingsPanel)}
+              settingsTriggerRef={settingsTriggerRef}
+              onResetCamera={resetCamera}
+              sceneRef={scene}
+              setProps={props.setProps}
+              tooltipId={tooltipId}
+              texts={texts}
+              fileOptions={props.fileOptions}
+              showExpandButton={props.showExpandButton}
+              showImageButton={props.showImageButton}
+              showExportButton={props.showExportButton}
+              showPositionButton={props.showPositionButton}
+            />
           </>
         )}
         {hasSettingsPanel && (

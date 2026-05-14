@@ -22,6 +22,14 @@
   z-index: 2;
 }
 
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] {
+  top: 0.75rem;
+  right: 0.75rem;
+  padding-top: 0;
+  padding-right: 0;
+  padding-bottom: 0.5rem;
+}
+
 :where(.mcv-theme, .mcv-root) .ms-button-bar > * {
   margin: 0 !important;
   width: 100%;
@@ -58,6 +66,71 @@
 :where(.mcv-theme, .mcv-root) .ms-enlarge-button {
   float: right;
   z-index: 2;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] .ms-button {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 1px solid var(--mcv-color-primary);
+  border-radius: 0;
+  background: var(--mcv-color-primary);
+  box-shadow: 0 12px 28px -20px color-mix(in srgb, var(--mcv-color-primary) 44%, transparent);
+  color: var(--mcv-color-primary-contrast);
+  margin: 0;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > * {
+  width: 2rem;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] [data-slot='menu'],
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] [data-slot='menu-trigger'] {
+  display: block;
+  margin: 0 !important;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] [data-slot='menu'] {
+  margin-top: 0 !important;
+  margin-right: 0 !important;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] [data-slot='menu'] .ms-button {
+  width: 100%;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:first-child,
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:first-child .ms-button {
+  border-radius: 4px 4px 0 0;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:not(:first-child) .ms-button,
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > .ms-button:not(:first-child) {
+  margin-top: -1px;
+  border-top-color: color-mix(in srgb, var(--mcv-color-primary-contrast) 16%, transparent);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:not(:last-child) .ms-button,
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > .ms-button:not(:last-child) {
+  border-bottom-color: color-mix(in srgb, var(--mcv-color-primary-contrast) 16%, transparent);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:last-child,
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:last-child .ms-button {
+  border-radius: 0 0 4px 4px;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] .ms-button:hover {
+  border-color: color-mix(in srgb, var(--mcv-color-primary) 88%, black);
+  background: color-mix(in srgb, var(--mcv-color-primary) 88%, black);
+  color: var(--mcv-color-primary-contrast);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] .ms-button svg {
+  width: 0.88rem;
+  height: 0.88rem;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene-square {
@@ -103,12 +176,32 @@
   max-height: 100%;
   max-width: 450px;
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--mcv-border-color);
   border-radius: var(--mcv-border-radius);
   padding: 1.25rem;
   background-color: color-mix(in srgb, var(--mcv-color-surface) 88%, transparent);
   box-shadow: var(--mcv-shadow-floating);
-  z-index: 2;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--mcv-border-color-hover) 65%, transparent) transparent;
+  z-index: 4;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene-settings-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene-settings-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene-settings-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mcv-border-color-hover) 65%, transparent);
+}
+
+:where(.mcv-theme, .mcv-root) .ms-scene-settings-panel::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--mcv-border-color-hover) 85%, transparent);
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene-bottom-panel {
@@ -148,6 +241,11 @@
   min-height: calc(100vh - 8rem);
 }
 
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active .ms-scene .ms-button-bar,
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active .ms-scene .ms-button-bar {
+  z-index: 5;
+}
+
 :where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active [data-slot='scene-frame'],
 :where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active [data-slot='scene-frame'] {
   display: flex;
@@ -160,4 +258,18 @@
 :where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active .ms-scene-square-wrapper {
   width: 100% !important;
   max-width: min(calc(100vh - 9rem), calc(100vw - 10rem)) !important;
+}
+
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active .ms-scene-settings-panel,
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active .ms-scene-settings-panel {
+  top: 1rem;
+  right: 4rem;
+  bottom: 1rem;
+  max-height: calc(100vh - 2rem);
+  z-index: 6;
+}
+
+:where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active .ms-scene-bottom-panel,
+:where(.mcv-theme, .mcv-root) .ms-modal.ms-is-active .ms-scene-bottom-panel {
+  z-index: 2;
 }

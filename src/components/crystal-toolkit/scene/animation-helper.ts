@@ -1,302 +1,217 @@
 import * as THREE from 'three';
 import { BufferAttribute, BufferGeometry } from 'three';
 import { JSON3DObject } from './constants';
-import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import { SceneJsonObject } from './simple-scene';
 import { ThreeBuilder } from './three_builder';
+import {
+  type AnimationType,
+  calculateCylinderTrackValues,
+  createConvexAnimationGeometry,
+  createConvexLineTrackValues,
+  createLineValueTrackValues,
+  getAnimationDuration,
+  type PositionPairAnimation,
+  type Vec3Animation,
+  calculatePositionAnimationValues,
+} from './animation-calculations';
 
-type AnimationType = 'displacement' | 'position' | string;
-type Vec3AnimationFrame = [number, number, number];
-type Vec3Animation = Vec3AnimationFrame[];
-type PositionPairAnimationFrame = [Vec3AnimationFrame, Vec3AnimationFrame];
-type PositionPairAnimation = PositionPairAnimationFrame[];
+export interface AnimationController {
+  reset(): void;
+  buildAnimationSupport(json: SceneJsonObject, three: THREE.Object3D): void;
+  updateTime(time: number): void;
+  animate(): void;
+}
 
-export class AnimationHelper {
-  private mixers: THREE.AnimationMixer[] = [];
-  private clock = new THREE.Clock();
-  private lineGeometriesToUpdate: THREE.LineSegments[] = [];
+type AnimationControllerState = {
+  mixers: THREE.AnimationMixer[];
+  clock: THREE.Clock;
+  lineGeometriesToUpdate: THREE.LineSegments[];
+};
 
-  constructor(private objectBuilder: ThreeBuilder) {}
+function pushAnimations(
+  state: AnimationControllerState,
+  name: string,
+  duration: number,
+  tracks: THREE.KeyframeTrack[],
+  rootObject: THREE.Object3D
+) {
+  const clip = new THREE.AnimationClip(name, duration, tracks);
+  const mixer = new THREE.AnimationMixer(rootObject);
+  state.mixers.push(mixer);
+  const action = mixer.clipAction(clip);
+  action.play();
+}
 
-  public reset() {
-    this.mixers.forEach((m) => m.stopAllAction());
-    this.mixers = [];
-    this.lineGeometriesToUpdate = [];
-  }
+function updateMixers(state: AnimationControllerState, timeOrDelta: number, absolute = false) {
+  state.mixers.forEach((mixer) => (absolute ? mixer.setTime(timeOrDelta) : mixer.update(timeOrDelta)));
+}
 
-  public buildAnimationSupport(json: SceneJsonObject, three: THREE.Object3D) {
-    const animations = (json.animate ?? []) as any[];
-    const kf = json.keyframes!;
-    const kfl = kf.length;
-    const animationType = (json.animateType ?? 'displacement') as AnimationType;
+function updateLineGeometries(state: AnimationControllerState) {
+  state.lineGeometriesToUpdate.forEach((line) => {
+    const geometry = line.geometry as THREE.BufferGeometry;
+    const values = (line as any).value;
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(values), 3));
+    (geometry.attributes.position as BufferAttribute).needsUpdate = true;
+  });
+}
 
-    // this supports animations based on the position
-    // pseudo code:
-    // ```
-    // - THREE.js require a flatten array. For example, for position keyframes,
-    //   an array like [1, 0, 0, 0, 0, 1] represents movement from (1, 0, 0) to (0, 0, 1).
-    //   This array is used as input for VectorKeyframeTrack.
-    //   Similarly, flattened arrays are used for QuaternionKeyframeTrack, NumberKeyframeTrack, etc.
-    //   Reference: https://threejs.org/docs/#api/en/animation/KeyframeTrack
-    // - A nested array structure that improves readability and maintains compatibility with
-    //   the original data format. This structure is later parsed into a flattened array, as required by THREE.js.
-    // - Construct a THREE.KeyframeTrack object. For example:
-    //   const positionKF = new THREE.VectorKeyframeTrack('.position', [...kf], values);
-    //   where `values` is the flattened array generated in the previous step.
-    // - Use the private function `pushAnimations` to bind the animation to a THREE.AnimationClip
-    //   and THREE.AnimationMixer instance.
-    //   Example:
-    //   this.pushAnimations('Action', kfl, [positionKF], three);
-    // ```
-    if (json.type === JSON3DObject.SPHERES || json.type === JSON3DObject.CUBES) {
-      const animation = (json.animate ?? []) as Vec3Animation;
-      const p = json.positions![0];
+function handlePositionAnimation(
+  state: AnimationControllerState,
+  json: SceneJsonObject,
+  three: THREE.Object3D,
+  keyframes: number[],
+  keyframeCount: number,
+  animationType: AnimationType
+) {
+  const animation = (json.animate ?? []) as Vec3Animation;
+  const values = calculatePositionAnimationValues(json.positions![0], animation, animationType);
+  const positionTrack = new THREE.VectorKeyframeTrack('.position', [...keyframes], values);
+  pushAnimations(
+    state,
+    'Action',
+    getAnimationDuration(animationType, keyframeCount),
+    [positionTrack],
+    three
+  );
+}
 
-      const values: number[] = [];
-      if (animationType == 'displacement') {
-        for (let i = 0; i < kfl; i++) {
-          // VectorKeyframeTrack requires absolute positions relative to the current position
-          // i.e. displacemnt itself
-          values.push(animation[i][0], animation[i][1], animation[i][2]);
-        }
-      } else if (animationType == 'position') {
-        for (let i = 0; i < kfl; i++) {
-          // Given an absolute position, we subtract the animation values to compute relative displacement
-          values.push(animation[i][0] - p[0], animation[i][1] - p[1], animation[i][2] - p[2]);
-        }
-      } else {
-        console.warn(`Unknown animationType: ${animationType}`);
-      }
-      const positionKF = new THREE.VectorKeyframeTrack('.position', [...kf], values);
-
-      let kflVal;
-      if (animationType == 'displacement') {
-        kflVal = -1;
-      } else {
-        kflVal = kfl;
-      }
-      this.pushAnimations('Action', kflVal, [positionKF], three);
-    } else if (json.type === JSON3DObject.CYLINDERS) {
-      (animations as PositionPairAnimation[]).forEach((animation, aIdx) => {
-        // create cylinders from u to v
-        const positionPair = json.positionPairs![aIdx];
-        const u_position = positionPair[0];
-        const v_position = positionPair[1];
-
-        let valuesp: any[] = [];
-        let valuesq: any[] = [];
-        let valuess: any[] = [];
-
-        for (let i = 0; i < kfl; i++) {
-          let target: [Vec3AnimationFrame, Vec3AnimationFrame] | undefined;
-          // The function `this.objectBuilder.getCylinderInfo` requires the actual positions
-          // of the atoms involved in the bond.
-          if (animationType == 'displacement') {
-            target = [
-              [
-                positionPair[0][0] + animation[i][0][0],
-                positionPair[0][1] + animation[i][0][1],
-                positionPair[0][2] + animation[i][0][2],
-              ],
-              [
-                positionPair[1][0] + animation[i][1][0],
-                positionPair[1][1] + animation[i][1][1],
-                positionPair[1][2] + animation[i][1][2],
-              ],
-            ];
-          } else if (animationType == 'position') {
-            target = [
-              [animation[i][0][0], animation[i][0][1], animation[i][0][2]],
-              [animation[i][1][0], animation[i][1][1], animation[i][1][2]],
-            ];
-          } else {
-            console.warn(`Unknown animationType: ${animationType}`);
-            continue;
-          }
-
-          const {
-            position: positionEnd,
-            scale: scaleEnd,
-            quaternion: quaternionEnd
-          } = this.objectBuilder.getCylinderInfo(target);
-
-          // make keyframeTrack's value
-          valuesp = [...valuesp, ...positionEnd];
-          // valuesq = [...valuesq, ...quaternion];
-          valuesq = [
-            ...valuesq,
-            ...[quaternionEnd.x, quaternionEnd.y, quaternionEnd.z, quaternionEnd.w]
-          ];
-          valuess = [...valuess, ...[1, scaleEnd, 1]];
-        }
-
-        // make keyframeTrack
-        const positionKF = new THREE.VectorKeyframeTrack('.position', kf, valuesp);
-        const quaternionKF = new THREE.QuaternionKeyframeTrack('.quaternion', kf, valuesq);
-        const scalenKF = new THREE.VectorKeyframeTrack('.scale', kf, valuess);
-
-        // attach keyframe to object
-        let kflVal;
-        if (animationType == 'displacement') {
-          kflVal = -1;
-        } else {
-          kflVal = kfl;
-        }
-        this.pushAnimations(
-          `Cylinder-${aIdx}`,
-          kflVal,
-          [positionKF, quaternionKF, scalenKF],
-          three.children[aIdx]
-        );
-      });
-    } else if (json.type === JSON3DObject.LINES) {
-      // for line geometries, we are doing a small hack. We cannot use morphTargets to animate a line
-      // geometry, so the trick is to use a field that will hold the interpolated value. We can
-      // use those values to update the vertices of the geometry in the animate method
-      const pt: any[] = [];
-      json.positions!.forEach((p, idx) => {
-        const pta: number[] = [];
-        for (let i = 0; i < kfl; i++) {
-          const lineAnimation = animations[idx] as Vec3Animation;
-          pta.push(
-            p[0] + lineAnimation[i][0],
-            p[1] + lineAnimation[i][1],
-            p[2] + lineAnimation[i][2]
-          );
-        }
-        pt.push(pta);
-      });
-      const lines = three.children[0] as THREE.LineSegments;
-      const a: any = (
-        (lines.geometry as THREE.BufferGeometry).attributes.position as BufferAttribute
-      ).array;
-      (lines as any).value = [...a];
-      const keyFrame2 = new THREE.NumberKeyframeTrack('.value', kf, [...a, ...pt]);
-      this.lineGeometriesToUpdate.push(lines as THREE.LineSegments);
-      this.pushAnimations('Lines', kfl, [keyFrame2], lines);
-    } else if (json.type === JSON3DObject.CONVEX) {
-      // we need to animate two meshes, the polygon and the lines
-      // we use the morphTarget approach, but for the lines, we need to do the same trick
-      // as above
-      const mesh = three.children[0] as THREE.Mesh;
-      const lines = three.children[1] as THREE.LineSegments;
-      const geo = mesh.geometry as BufferGeometry;
-      geo.morphAttributes.position = [];
-      // calculate morph target
-      const pt = json.positions!.map((p, idx) => {
-        const convexAnimation = animations[idx] as Vec3Animation;
-        return new THREE.Vector3(
-          ...[
-            p[0] + convexAnimation[0][0],
-            p[1] + convexAnimation[0][1],
-            p[2] + convexAnimation[0][2]
-          ]
-        );
-      });
-      const geom = new ConvexGeometry(pt);
-      geo.morphAttributes.position[0] = (geom as ConvexGeometry).attributes.position;
-      mesh.morphTargetInfluences = [0];
-      const keyFrame = new THREE.NumberKeyframeTrack('.morphTargetInfluences', kf, [0.0, 1.0]);
-      this.pushAnimations('Convex', kfl, [keyFrame], mesh);
-      const edges = new THREE.EdgesGeometry(geom);
-      const line = new THREE.LineSegments(
-        edges,
-        new THREE.LineBasicMaterial({ color: '#000000', linewidth: 1 })
-      );
-      /*(lines.geometry as THREE.BufferGeometry).setAttribute(
-        'position',
-        edges.getAttribute('position')
-      );*/
-      const a: any = (
-        (lines.geometry as THREE.BufferGeometry).attributes.position as BufferAttribute
-      ).array;
-      const p: any = (line.geometry as any).attributes.position.array;
-      (lines as any).value = [...a];
-      const keyFrame2 = new THREE.NumberKeyframeTrack('.value', kf, [...a, ...p]);
-      this.lineGeometriesToUpdate.push(lines as THREE.LineSegments);
-      this.pushAnimations('Convexlines', kfl, [keyFrame2], lines);
-    } else if (json.type === JSON3DObject.BEZIER) {
-      console.warn('Animation not supported', json.type);
-    } else {
-      console.warn('Animation not supported', json.type);
-    }
-  }
-
-  private addAnimationForPosition(
-    animation: Vec3Animation,
-    three: THREE.Object3D,
-    kf: number[],
-    kfl: number,
-    animationType: AnimationType
-  ) {
-    const values = this.calculateTargetPosition(three, animation, kfl, animationType);
-    const positionKF = new THREE.VectorKeyframeTrack('.position', [...kf], values);
-    this.pushAnimations('Action', kfl, [positionKF], three);
-  }
-
-  private calculateTargetPosition(
-    { position }: THREE.Object3D,
-    animation: Vec3Animation,
-    kfl: number,
-    animationType: AnimationType
-  ) {
-    // Iterate through all keyframes and construct a flattened array of their corresponding positions.
-    const p = [position.x, position.y, position.z];
-    const result: number[] = [];
-    if (animationType == 'displacement') {
-      for (let i = 0; i < kfl; i++) {
-        result.push(p[0] + animation[i][0], p[1] + animation[i][1], p[2] + animation[i][2]);
-      }
-    } else if (animationType == 'position') {
-      for (let i = 0; i < kfl; i++) {
-        result.push(animation[i][0], animation[i][1], animation[i][2]);
-      }
-    } else {
-      console.warn(`Unknown animationType: ${animationType}`);
-    }
-    return result;
-  }
-
-  private updateMixers(timeOrDelta: number, absolute = false) {
-    this.mixers &&
-      this.mixers.forEach((m) => (absolute ? m.setTime(timeOrDelta) : m.update(timeOrDelta)));
-  }
-  private updateLineGeometries() {
-    this.lineGeometriesToUpdate.forEach((l) => {
-      const geom = l.geometry as THREE.BufferGeometry;
-      const values = (l as any).value;
-      geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(values), 3));
-      (geom.attributes.position as BufferAttribute).needsUpdate = true;
-    });
-  }
-
-  public updateTime(time: number) {
-    this.updateMixers(time, true);
-    this.updateLineGeometries();
-  }
-
-  public animate() {
-    this.updateMixers(this.clock.getDelta());
-    this.updateLineGeometries();
-  }
-
-  private pushAnimations(
-    name: string,
-    duration: number,
-    tracks: THREE.KeyframeTrack[],
-    rootObject: THREE.Object3D
-  ) {
-    // change duration to -1 for seamlessly animation
-    const clip = new THREE.AnimationClip(name, duration, tracks);
-    const mixer = new THREE.AnimationMixer(rootObject);
-    this.mixers.push(mixer);
-    const ca = mixer.clipAction(clip);
-    ca.play();
-  }
-
-  private useMorphTargetForAnimation(type: JSON3DObject): boolean {
-    return (
-      type === JSON3DObject.CUBES || type === JSON3DObject.CONVEX || type === JSON3DObject.LINES
+function handleCylinderAnimation(
+  state: AnimationControllerState,
+  objectBuilder: ThreeBuilder,
+  json: SceneJsonObject,
+  three: THREE.Object3D,
+  animations: PositionPairAnimation[],
+  keyframes: number[],
+  keyframeCount: number,
+  animationType: AnimationType
+) {
+  animations.forEach((animation, index) => {
+    const positionPair = json.positionPairs![index];
+    const { positionValues, quaternionValues, scaleValues } = calculateCylinderTrackValues(
+      animation,
+      positionPair,
+      animationType,
+      (target) => objectBuilder.getSegmentInfo(target)
     );
-  }
+
+    const positionTrack = new THREE.VectorKeyframeTrack('.position', keyframes, positionValues);
+    const quaternionTrack = new THREE.QuaternionKeyframeTrack('.quaternion', keyframes, quaternionValues);
+    const scaleTrack = new THREE.VectorKeyframeTrack('.scale', keyframes, scaleValues);
+
+    pushAnimations(
+      state,
+      `Cylinder-${index}`,
+      getAnimationDuration(animationType, keyframeCount),
+      [positionTrack, quaternionTrack, scaleTrack],
+      three.children[index]
+    );
+  });
+}
+
+function handleLineAnimation(
+  state: AnimationControllerState,
+  json: SceneJsonObject,
+  three: THREE.Object3D,
+  animations: Vec3Animation[],
+  keyframes: number[],
+  keyframeCount: number
+) {
+  const lines = three.children[0] as THREE.LineSegments;
+  const { currentValues, trackValues } = createLineValueTrackValues(
+    lines.geometry as THREE.BufferGeometry,
+    json.positions!,
+    animations
+  );
+  (lines as any).value = [...currentValues];
+  const valueTrack = new THREE.NumberKeyframeTrack('.value', keyframes, trackValues);
+  state.lineGeometriesToUpdate.push(lines);
+  pushAnimations(state, 'Lines', keyframeCount, [valueTrack], lines);
+}
+
+function handleConvexAnimation(
+  state: AnimationControllerState,
+  json: SceneJsonObject,
+  three: THREE.Object3D,
+  animations: Vec3Animation[],
+  keyframes: number[],
+  keyframeCount: number
+) {
+  const mesh = three.children[0] as THREE.Mesh;
+  const lines = three.children[1] as THREE.LineSegments;
+  const meshGeometry = mesh.geometry as BufferGeometry;
+  meshGeometry.morphAttributes.position = [];
+
+  const convexGeometry = createConvexAnimationGeometry(json.positions!, animations);
+  meshGeometry.morphAttributes.position[0] = convexGeometry.attributes.position;
+  mesh.morphTargetInfluences = [0];
+
+  const morphTargetTrack = new THREE.NumberKeyframeTrack(
+    '.morphTargetInfluences',
+    keyframes,
+    [0.0, 1.0]
+  );
+  pushAnimations(state, 'Convex', keyframeCount, [morphTargetTrack], mesh);
+
+  const edges = new THREE.EdgesGeometry(convexGeometry);
+  const { currentValues, trackValues } = createConvexLineTrackValues(
+    lines.geometry as THREE.BufferGeometry,
+    edges
+  );
+  (lines as any).value = [...currentValues];
+  const lineValueTrack = new THREE.NumberKeyframeTrack('.value', keyframes, trackValues);
+  state.lineGeometriesToUpdate.push(lines);
+  pushAnimations(state, 'Convexlines', keyframeCount, [lineValueTrack], lines);
+}
+
+export function createAnimationController(objectBuilder: ThreeBuilder): AnimationController {
+  const state: AnimationControllerState = {
+    mixers: [],
+    clock: new THREE.Clock(),
+    lineGeometriesToUpdate: [],
+  };
+
+  return {
+    reset() {
+      state.mixers.forEach((mixer) => mixer.stopAllAction());
+      state.mixers = [];
+      state.lineGeometriesToUpdate = [];
+    },
+    buildAnimationSupport(json, three) {
+      const animations = (json.animate ?? []) as any[];
+      const keyframes = json.keyframes!;
+      const keyframeCount = keyframes.length;
+      const animationType = (json.animateType ?? 'displacement') as AnimationType;
+
+      if (json.type === JSON3DObject.SPHERES || json.type === JSON3DObject.CUBES) {
+        handlePositionAnimation(state, json, three, keyframes, keyframeCount, animationType);
+      } else if (json.type === JSON3DObject.CYLINDERS) {
+        handleCylinderAnimation(
+          state,
+          objectBuilder,
+          json,
+          three,
+          animations as PositionPairAnimation[],
+          keyframes,
+          keyframeCount,
+          animationType
+        );
+      } else if (json.type === JSON3DObject.LINES) {
+        handleLineAnimation(state, json, three, animations as Vec3Animation[], keyframes, keyframeCount);
+      } else if (json.type === JSON3DObject.CONVEX) {
+        handleConvexAnimation(state, json, three, animations as Vec3Animation[], keyframes, keyframeCount);
+      } else if (json.type === JSON3DObject.BEZIER) {
+        console.warn('Animation not supported', json.type);
+      } else {
+        console.warn('Animation not supported', json.type);
+      }
+    },
+    updateTime(time) {
+      updateMixers(state, time, true);
+      updateLineGeometries(state);
+    },
+    animate() {
+      updateMixers(state, state.clock.getDelta());
+      updateLineGeometries(state);
+    },
+  };
 }

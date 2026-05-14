@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.0 - 2026-05-14
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- Documented architecture, API, usage, and styling in Chinese
+
+
 ## 0.0.5 - 2026-05-13
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

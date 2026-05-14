@@ -2,6 +2,10 @@
 
 `@gnosys/matsci-crystal-viewer-kit` 是从 `matsci-ui` 中抽离出来的晶体结构可视化组件包。
 
+详细中文文档见：
+
+- [docs/晶体包设计与使用说明.md](./docs/%E6%99%B6%E4%BD%93%E5%8C%85%E8%AE%BE%E8%AE%A1%E4%B8%8E%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.md)
+
 这个包保留了 React + Three.js 的 3D 场景主路径，并配套了 viewer 所需的最小控制 UI：
 
 - 不依赖 Less

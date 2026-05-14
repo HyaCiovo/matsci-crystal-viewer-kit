@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FaCompress, FaExpand } from 'react-icons/fa';
+import { Maximize, Minimize } from 'lucide-react';
 
 export interface EnlargeableProps {
   id?: string;
@@ -68,7 +68,7 @@ export const Enlargeable = ({
       >
         {!hideButton ? (
           <button className="ms-button ms-enlarge-button" data-slot="overlay-toggle" onClick={() => setExpanded(!expanded)}>
-            {expanded ? <FaCompress /> : <FaExpand />}
+            {expanded ? <Minimize /> : <Maximize />}
           </button>
         ) : null}
         {children}

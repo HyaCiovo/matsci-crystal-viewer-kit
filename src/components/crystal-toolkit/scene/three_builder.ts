@@ -36,6 +36,22 @@ type LightJsonLike = {
   args: any[];
   position?: ThreePosition;
 };
+type LineStyleOptions = {
+  color?: string;
+  lineWidth?: number;
+  scale?: number;
+  dashSize?: number;
+  gapSize?: number;
+};
+
+type SegmentPlacement = {
+  midpoint: THREE.Vector3;
+  direction: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  length: number;
+  end: THREE.Vector3;
+};
+
 const RadiusTubeGeometryCtor = RadiusTubeBufferGeometry as unknown as new (
   ...args: any[]
 ) => THREE.BufferGeometry;
@@ -71,6 +87,216 @@ class QuadraticSteppedBezierCurver extends THREE.QuadraticBezierCurve3 {
  */
 export class ThreeBuilder {
   constructor(private settings: BuilderSettings) {}
+
+  private updateObjectColor(object: THREE.Object3D, color: string) {
+    const material = (object as THREE.Object3D & {
+      material?: THREE.Material | THREE.Material[];
+    }).material;
+
+    if (Array.isArray(material)) {
+      material.forEach((entry) => this.updateMaterialColor(entry, color));
+      return;
+    }
+
+    material && this.updateMaterialColor(material, color);
+  }
+
+  private updateMaterialColor(material: THREE.Material, color: string) {
+    const colorableMaterial = material as THREE.Material & {
+      color?: {
+        set: (value: string) => void;
+      };
+    };
+    colorableMaterial.color?.set(color);
+  }
+
+  private updateChildObjectColors(obj: THREE.Object3D, color: string) {
+    obj.children.forEach((child) => {
+      this.updateObjectColor(child, color);
+    });
+  }
+
+  private replaceObjectGeometry(object: THREE.Object3D, geometry: THREE.BufferGeometry) {
+    const geometryObject = object as THREE.Object3D & {
+      geometry: THREE.BufferGeometry;
+    };
+    geometryObject.geometry.dispose();
+    geometryObject.geometry = geometry;
+  }
+
+  private replaceChildObjectGeometries(obj: THREE.Object3D, geometry: THREE.BufferGeometry) {
+    obj.children.forEach((child) => {
+      this.replaceObjectGeometry(child, geometry);
+    });
+  }
+
+  private updateArrowChildGeometry(
+    obj: THREE.Object3D,
+    positionPairs: PositionPair[],
+    childIndexResolver: (pairIndex: number) => number,
+    geometry: THREE.BufferGeometry
+  ) {
+    positionPairs.forEach((_pair, index) => {
+      const mesh = obj.children[childIndexResolver(index)] as THREE.Mesh;
+      this.replaceObjectGeometry(mesh, geometry);
+    });
+  }
+
+  private disposeMaterial(material: THREE.Material | THREE.Material[]) {
+    if (Array.isArray(material)) {
+      material.forEach((entry) => entry.dispose());
+      return;
+    }
+
+    material.dispose();
+  }
+
+  private applyTransparentMaterialState(material: THREE.Material, opacity: number) {
+    const transparentMaterial = material as THREE.Material & {
+      transparent?: boolean;
+      depthWrite?: boolean;
+    };
+    if (opacity) {
+      transparentMaterial.transparent = true;
+      transparentMaterial.depthWrite = false;
+    }
+  }
+
+  private createPositionGeometry(positions: ThreePosition[]) {
+    const vertices = new THREE.Float32BufferAttribute(mergeInnerArrays(positions), 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', vertices);
+    return geometry;
+  }
+
+  private createConvexGeometry(positions: ThreePosition[]) {
+    const points = positions.map((position) => new THREE.Vector3(...position));
+    return new ConvexGeometry(points);
+  }
+
+  private createEdgeSegments(geometry: THREE.BufferGeometry, color: string) {
+    const edges = new THREE.EdgesGeometry(geometry);
+    const material = new THREE.LineBasicMaterial({ color });
+    return new THREE.LineSegments(edges, material);
+  }
+
+  private createMaterialVariant(material: THREE.Material, color?: string) {
+    if (!color) {
+      return material;
+    }
+
+    const nextMaterial = material.clone();
+    this.updateMaterialColor(nextMaterial, color);
+    return nextMaterial;
+  }
+
+  private addPositionedMeshes(
+    parent: THREE.Object3D,
+    positions: ThreePosition[],
+    createMesh: (position: ThreePosition, index: number) => THREE.Object3D
+  ) {
+    positions.forEach((position, index) => {
+      parent.add(createMesh(position, index));
+    });
+  }
+
+  private updateArrowHeadGeometry(
+    obj: THREE.Object3D,
+    baseJsonObject: SceneJsonLike,
+    geometry: THREE.BufferGeometry
+  ) {
+    this.updateArrowChildGeometry(
+      obj,
+      baseJsonObject.positionPairs,
+      (index) => index * 2 + 1,
+      geometry
+    );
+  }
+
+  private createLineGeometry(positions: number[]) {
+    const vertices = new THREE.Float32BufferAttribute(positions, 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', vertices);
+    return geometry;
+  }
+
+  private resolveLineStyleOptions(
+    objectJson: SceneJsonLike,
+    overrides: LineStyleOptions = {}
+  ): Required<LineStyleOptions> {
+    return {
+      color: overrides.color || objectJson.color || DEFAULT_LINE_COLOR,
+      lineWidth: overrides.lineWidth || objectJson.line_width || 1,
+      scale: overrides.scale || objectJson.scale || 1,
+      dashSize: overrides.dashSize || objectJson.dashSize || 3,
+      gapSize: overrides.gapSize || objectJson.gapSize || 1
+    };
+  }
+
+  private isDashedLineStyle(objectJson: SceneJsonLike, overrides: LineStyleOptions = {}) {
+    return Boolean(
+      objectJson.dashSize ||
+        objectJson.scale ||
+        objectJson.gapSize ||
+        overrides.dashSize ||
+        overrides.scale ||
+        overrides.gapSize
+    );
+  }
+
+  private createLineMaterial(objectJson: SceneJsonLike, overrides: LineStyleOptions = {}) {
+    const lineStyle = this.resolveLineStyleOptions(objectJson, overrides);
+
+    if (this.isDashedLineStyle(objectJson, overrides)) {
+      return new THREE.LineDashedMaterial({
+        color: lineStyle.color || DEFAULT_DASHED_LINE_COLOR,
+        linewidth: lineStyle.lineWidth,
+        scale: lineStyle.scale,
+        dashSize: lineStyle.dashSize,
+        gapSize: lineStyle.gapSize
+      });
+    }
+
+    return new THREE.LineBasicMaterial({
+      color: lineStyle.color || DEFAULT_LINE_COLOR,
+      linewidth: lineStyle.lineWidth
+    });
+  }
+
+  private applyLineDistancesIfNeeded(
+    mesh: THREE.LineSegments,
+    objectJson: SceneJsonLike,
+    overrides: LineStyleOptions = {}
+  ) {
+    if (this.isDashedLineStyle(objectJson, overrides)) {
+      mesh.computeLineDistances();
+    }
+  }
+
+  private getSegmentPlacement(positionPair: PositionPair): SegmentPlacement {
+    const start = new THREE.Vector3(...positionPair[0]);
+    const end = new THREE.Vector3(...positionPair[1]);
+    const direction = end.clone().sub(start);
+    const midpoint = start.clone().add(direction.clone().multiplyScalar(0.5));
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      direction.clone().normalize()
+    );
+
+    return {
+      midpoint,
+      direction,
+      quaternion,
+      length: direction.length(),
+      end
+    };
+  }
+
+  private placeSegmentMesh(mesh: THREE.Mesh, placement: SegmentPlacement) {
+    mesh.scale.y = placement.length;
+    mesh.position.copy(placement.midpoint);
+    mesh.setRotationFromQuaternion(placement.quaternion);
+  }
 
   private validateRadiusArrays({ radiusTop, radiusBottom, positionPairs }: RadiusArrayConfig) {
     if (!Array.isArray(radiusBottom)) {
@@ -126,60 +352,29 @@ export class ThreeBuilder {
     perCylinderGeometry && this.validateRadiusArrays(object_json as RadiusArrayConfig);
     const perCylinderMaterial = Array.isArray(color);
     const geom = this.getCylinderGeometry(radius, radiusTop, radiusBottom);
-    const mat = this.makeMaterial(color, object_json.animate);
-    const vec_y = new THREE.Vector3(0, 1, 0); // initial axis of cylinder
-    const quaternion = new THREE.Quaternion();
+    const baseColor = perCylinderMaterial ? color[0] : color;
+    const mat = this.makeMaterial(baseColor, object_json.animate);
     object_json.positionPairs.forEach((positionPair: PositionPair, idx: number) => {
       // the following is technically correct but could be optimized?
       const currentGeometry = perCylinderGeometry
         ? this.getCylinderGeometry(radius, radiusTop[idx], radiusBottom[idx])
         : geom;
-      const currentMaterial =
-        perCylinderMaterial && mat instanceof THREE.MeshStandardMaterial ? mat.clone() : mat;
-      perCylinderMaterial && (mat.color = new THREE.Color(color[idx]));
+      const currentMaterial = perCylinderMaterial
+        ? this.createMaterialVariant(mat, color[idx])
+        : mat;
 
       const mesh = new THREE.Mesh(currentGeometry, currentMaterial);
-      const vec_a = new THREE.Vector3(...positionPair[0]);
-      const vec_b = new THREE.Vector3(...positionPair[1]);
-      const vec_rel = vec_b.sub(vec_a);
-      // scale cylinder to correct length
-      mesh.scale.y = vec_rel.length();
-      // set origin at midpoint of cylinder
-      const vec_midpoint = vec_a.add(vec_rel.clone().multiplyScalar(0.5));
-      mesh.position.set(vec_midpoint.x, vec_midpoint.y, vec_midpoint.z);
-      // rotate cylinder into correct orientation
-      quaternion.setFromUnitVectors(vec_y, vec_rel.normalize());
-      mesh.setRotationFromQuaternion(quaternion);
+      this.placeSegmentMesh(mesh, this.getSegmentPlacement(positionPair));
       obj.add(mesh);
     });
     return obj;
   }
 
   public makeLine(object_json: SceneJsonLike, obj: THREE.Object3D) {
-    const verts = new THREE.Float32BufferAttribute(mergeInnerArrays(object_json.positions), 3);
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', verts);
-
-    let mat;
-    if (object_json.dashSize || object_json.scale || object_json.gapSize) {
-      mat = new THREE.LineDashedMaterial({
-        color: object_json.color || DEFAULT_DASHED_LINE_COLOR,
-        linewidth: object_json.line_width || 1,
-        scale: object_json.scale || 1,
-        dashSize: object_json.dashSize || 3,
-        gapSize: object_json.gapSize || 1
-      });
-    } else {
-      mat = new THREE.LineBasicMaterial({
-        color: object_json.color || DEFAULT_LINE_COLOR,
-        linewidth: object_json.line_width || 1
-      });
-    }
-
+    const geom = this.createLineGeometry(mergeInnerArrays(object_json.positions));
+    const mat = this.createLineMaterial(object_json);
     const mesh = new THREE.LineSegments(geom, mat);
-    if (object_json.dashSize || object_json.scale || object_json.gapSize) {
-      mesh.computeLineDistances();
-    }
+    this.applyLineDistancesIfNeeded(mesh, object_json);
     obj.add(mesh);
     return obj;
   }
@@ -188,20 +383,17 @@ export class ThreeBuilder {
     const size = object_json.width * this.settings.sphereScale;
     const geom = new THREE.BoxGeometry(size, size, size);
     const mat = this.makeMaterial(object_json.color, object_json.animate);
-    object_json.positions.forEach((position: ThreePosition) => {
+    this.addPositionedMeshes(obj, object_json.positions, (position) => {
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(...position);
-      obj.add(mesh);
+      return mesh;
     });
 
     return obj;
   }
 
   public makeSurfaces(object_json: SceneJsonLike, obj: THREE.Object3D) {
-    const verts = new THREE.Float32BufferAttribute(mergeInnerArrays(object_json.positions), 3);
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', verts);
-
+    const geom = this.createPositionGeometry(object_json.positions);
     const opacity = object_json.opacity || this.settings.defaultSurfaceOpacity;
     const mat = this.makeMaterial(object_json.color, object_json.animate, opacity);
 
@@ -216,10 +408,7 @@ export class ThreeBuilder {
       mat.side = THREE.DoubleSide; // not sure if this is necessary if we compute normals correctly
     }
 
-    if (opacity) {
-      mat.transparent = true;
-      mat.depthWrite = false;
-    }
+    this.applyTransparentMaterialState(mat, opacity);
 
     const mesh = new THREE.Mesh(geom, mat);
     obj.add(mesh);
@@ -228,23 +417,14 @@ export class ThreeBuilder {
   }
 
   public makeConvex(object_json: SceneJsonLike, obj: THREE.Object3D) {
-    const points = object_json.positions.map((p: ThreePosition) => new THREE.Vector3(...p));
-    const geom = new ConvexGeometry(points);
-
+    const geom = this.createConvexGeometry(object_json.positions);
     const opacity = object_json.opacity || this.settings.defaultSurfaceOpacity;
     const mat = this.makeMaterial(object_json.color, object_json.animate, opacity);
-    if (opacity) {
-      mat.transparent = true;
-      mat.depthWrite = false;
-    }
+    this.applyTransparentMaterialState(mat, opacity);
 
     const mesh = new THREE.Mesh(geom, mat);
     obj.add(mesh);
-    const edges = new THREE.EdgesGeometry(geom);
-    const line = new THREE.LineSegments(
-      edges,
-      new THREE.LineBasicMaterial({ color: object_json.color })
-    );
+    const line = this.createEdgeSegments(geom, object_json.color);
     obj.add(line);
     return obj;
   }
@@ -283,33 +463,19 @@ export class ThreeBuilder {
     const geom_head = this.getHeadGeometry(headWidth, headLength);
     const mat = this.makeMaterial(object_json.color);
 
-    const vec_y = new THREE.Vector3(0, 1, 0); // initial axis of cylinder
-    const quaternion = new THREE.Quaternion();
-
     // for each pairs, we have one cylinder and one head, so obj will have meshes as children
     // for 2 position pairs, 1cylinder, 1head, 2cylinder, 2head
 
     object_json.positionPairs.forEach((positionPair: PositionPair) => {
       // the following is technically correct but could be optimized?
+      const placement = this.getSegmentPlacement(positionPair);
       const mesh = new THREE.Mesh(geom_cyl, mat);
-      const vec_a = new THREE.Vector3(...positionPair[0]);
-      const vec_b = new THREE.Vector3(...positionPair[1]);
-      const vec_head = new THREE.Vector3(...positionPair[1]);
-      const vec_rel = vec_b.sub(vec_a);
-      // scale cylinder to correct length
-      mesh.scale.y = vec_rel.length();
-      // set origin at midpoint of cylinder
-      const vec_midpoint = vec_a.add(vec_rel.clone().multiplyScalar(0.5));
-      mesh.position.set(vec_midpoint.x, vec_midpoint.y, vec_midpoint.z);
-      // rotate cylinder into correct orientation
-      quaternion.setFromUnitVectors(vec_y, vec_rel.normalize());
-      mesh.setRotationFromQuaternion(quaternion);
+      this.placeSegmentMesh(mesh, placement);
       obj.add(mesh);
       // add arrowhead
       const mesh_head = new THREE.Mesh(geom_head, mat);
-      mesh_head.position.set(vec_head.x, vec_head.y, vec_head.z);
-      // rotate cylinder into correct orientation
-      mesh_head.setRotationFromQuaternion(quaternion.clone());
+      mesh_head.position.copy(placement.end);
+      mesh_head.setRotationFromQuaternion(placement.quaternion.clone());
       obj.add(mesh_head);
     });
     return obj;
@@ -344,10 +510,9 @@ export class ThreeBuilder {
       object_json.phiStart,
       object_json.phiEnd
     );
-    object_json.positions.forEach((position: ThreePosition) => {
+    this.addPositionedMeshes(obj, object_json.positions, (position) => {
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(...position);
-      obj.add(mesh);
       return mesh;
     });
     return obj;
@@ -391,7 +556,7 @@ export class ThreeBuilder {
         meshes[index].setRotationFromQuaternion(quaternion);
       });
     }
-    meshes.forEach((mesh: THREE.Mesh) => obj.add(mesh));
+    this.addPositionedMeshes(obj, object_json.positions, (_position, index) => meshes[index]);
     return obj;
   }
 
@@ -510,27 +675,18 @@ export class ThreeBuilder {
   }
 
   public updateSphereColor(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, newColor: string) {
-    // get uuid from json object
-    obj.children.forEach((o) => {
-      const material = (o as THREE.Mesh).material as THREE.MeshStandardMaterial;
-      material.color = new THREE.Color(newColor);
-    });
+    this.updateChildObjectColors(obj, newColor);
   }
 
   public updateConvexColor(obj: THREE.Object3D, _objjson: SceneJsonLike, color: string) {
-    obj.children.forEach((o: any) => {
-      o.material.color = new THREE.Color(color);
-    });
+    this.updateChildObjectColors(obj, color);
   }
 
   public updateConvexEdges(obj: THREE.Object3D, _objjson: SceneJsonLike, positions: ThreePosition[]) {
-    const points = positions.map((p: ThreePosition) => new THREE.Vector3(...p));
-    const geom = new ConvexGeometry(points);
+    const geom = this.createConvexGeometry(positions);
     const edges = new THREE.EdgesGeometry(geom);
-    (obj.children[0] as THREE.Mesh).geometry.dispose();
-    (obj.children[1] as THREE.Mesh).geometry.dispose();
-    (obj.children[0] as THREE.Mesh).geometry = geom;
-    (obj.children[1] as THREE.Mesh).geometry = edges;
+    this.replaceObjectGeometry(obj.children[0], geom);
+    this.replaceObjectGeometry(obj.children[1], edges);
   }
 
   public updateSphereRadius(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, newRadius: number) {
@@ -538,49 +694,31 @@ export class ThreeBuilder {
     const phiStart = geometry.parameters.phiStart;
     const phiEnd = geometry.parameters.phiLength;
     const newGeometry = this.getSphereGeometry(newRadius, phiStart, phiEnd);
-    obj.children.forEach((o) => {
-      (o as THREE.Mesh).geometry.dispose();
-      (o as THREE.Mesh).geometry = newGeometry;
-    });
+    this.replaceChildObjectGeometries(obj, newGeometry);
   }
 
-  // TODO(chab) merge the two below methods
-  // arrow width
   public updateHeadWidth(obj: THREE.Object3D, baseJsonObject: SceneJsonLike, headWidth: number) {
-    const geom_head = this.getHeadGeometry(headWidth, baseJsonObject.headWidth);
-    baseJsonObject.positionPairs.forEach((_a: PositionPair, idx: number) => {
-      const headIndex = idx * 2 + 1;
-      const mesh_head = obj.children[headIndex];
-      (mesh_head as THREE.Mesh).geometry.dispose();
-      (mesh_head as THREE.Mesh).geometry = geom_head;
-    });
+    const geom_head = this.getHeadGeometry(headWidth, baseJsonObject.headLength);
+    this.updateArrowHeadGeometry(obj, baseJsonObject, geom_head);
   }
 
-  // arrow length
   public updateHeadLength(obj: THREE.Object3D, baseJsonObject: SceneJsonLike, headLength: number) {
     const geom_head = this.getHeadGeometry(baseJsonObject.headWidth, headLength);
-    baseJsonObject.positionPairs.forEach((_a: PositionPair, idx: number) => {
-      const headIndex = idx * 2 + 1;
-      const mesh_head = obj.children[headIndex];
-      (mesh_head as THREE.Mesh).geometry.dispose();
-      (mesh_head as THREE.Mesh).geometry = geom_head;
-    });
+    this.updateArrowHeadGeometry(obj, baseJsonObject, geom_head);
   }
 
   public updateArrowColor(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, color: string) {
-    obj.children.forEach((o) => {
-      ((o as THREE.Mesh).material as THREE.MeshStandardMaterial).color = new THREE.Color(color);
-    });
+    this.updateChildObjectColors(obj, color);
   }
 
   public updateArrowRadius(obj: THREE.Object3D, baseJsonObject: SceneJsonLike, radius: number) {
     const geom_cyl = this.getCylinderGeometry(radius);
-    baseJsonObject.positionPairs.forEach((_a: PositionPair, idx: number) => {
-      const headIndex = idx * 2;
-      const mesh_head = obj.children[headIndex];
-      (mesh_head as THREE.Mesh).geometry.dispose();
-      (mesh_head as THREE.Mesh).geometry = geom_cyl;
-    });
+    this.updateArrowChildGeometry(
+      obj,
+      baseJsonObject.positionPairs,
+      (index) => index * 2,
+      geom_cyl
+    );
   }
 
   //TODO(chab) check if positions are different, update the whole mesh
@@ -591,11 +729,9 @@ export class ThreeBuilder {
   }
 
   public updateLineSegments(obj: THREE.Object3D, _object_json: SceneJsonLike, positions: number[]) {
-    const verts = new THREE.Float32BufferAttribute(positions, 3);
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', verts);
+    const geom = this.createLineGeometry(positions);
     const mesh: THREE.LineSegments = obj.children[0] as THREE.LineSegments;
-    mesh.geometry = geom;
+    this.replaceObjectGeometry(mesh, geom);
   }
 
   public updateLineStyle(
@@ -608,41 +744,10 @@ export class ThreeBuilder {
     gapSize?: number
   ) {
     const mesh: THREE.LineSegments = obj.children[0] as THREE.LineSegments;
-    let mat;
-
-    //FIXME(update material instead)
-    if (
-      object_json.dashSize ||
-      object_json.scale ||
-      object_json.gapSize ||
-      dashSize ||
-      scale ||
-      gapSize
-    ) {
-      mat = new THREE.LineDashedMaterial({
-        color: color || object_json.color || DEFAULT_DASHED_LINE_COLOR,
-        linewidth: lineWidth || object_json.line_width || 1,
-        scale: scale || object_json.scale || 1,
-        dashSize: dashSize || object_json.dashSize || 3,
-        gapSize: gapSize || object_json.gapSize || 1
-      });
-    } else {
-      mat = new THREE.LineBasicMaterial({
-        color: color || object_json.color || DEFAULT_LINE_COLOR,
-        linewidth: lineWidth || object_json.line_width || 1
-      });
-    }
-    mesh.material = mat;
-    if (
-      object_json.dashSize ||
-      object_json.scale ||
-      object_json.gapSize ||
-      dashSize ||
-      scale ||
-      gapSize
-    ) {
-      mesh.computeLineDistances();
-    }
+    const overrides = { color, lineWidth, scale, dashSize, gapSize };
+    this.disposeMaterial(mesh.material);
+    mesh.material = this.createLineMaterial(object_json, overrides);
+    this.applyLineDistancesIfNeeded(mesh, object_json, overrides);
   }
 
   // generic
@@ -656,25 +761,19 @@ export class ThreeBuilder {
     index: number
   ) {
     const mesh = obj.children[index] as THREE.Mesh;
-    const { scale, position, quaternion } = this.getCylinderInfo(newPositionPair);
-    mesh.position.set(...(position as ThreePosition));
-    mesh.scale.y = scale;
-    mesh.setRotationFromQuaternion(quaternion);
+    this.placeSegmentMesh(mesh, this.getSegmentPlacement(newPositionPair));
   }
 
-  public getCylinderInfo(positionPair: PositionPair) {
-    const vec_a = new THREE.Vector3(...positionPair[0]);
-    const vec_b = new THREE.Vector3(...positionPair[1]);
-    const vec_rel = vec_b.sub(vec_a);
-    const length = vec_rel.length();
-    const vec_midpoint = vec_a.add(vec_rel.clone().multiplyScalar(0.5));
-    const quaternion = new THREE.Quaternion();
-    const vec_y = new THREE.Vector3(0, 1, 0); // initial axis of cylinder
-    quaternion.setFromUnitVectors(vec_y, vec_rel.normalize());
+  public getSegmentInfo(positionPair: PositionPair) {
+    const placement = this.getSegmentPlacement(positionPair);
     return {
-      scale: length,
-      position: [vec_midpoint.x, vec_midpoint.y, vec_midpoint.z],
-      quaternion
+      scale: placement.length,
+      position: [
+        placement.midpoint.x,
+        placement.midpoint.y,
+        placement.midpoint.z
+      ] as ThreePosition,
+      quaternion: placement.quaternion
     };
   }
 
@@ -682,17 +781,11 @@ export class ThreeBuilder {
   public updateCylinderRadius(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, newRadius: number) {
     //CylinderBufferGeometry
     const newGeometry = this.getCylinderGeometry(newRadius);
-    obj.children.forEach((o) => {
-      (o as THREE.Mesh).geometry.dispose();
-      (o as THREE.Mesh).geometry = newGeometry;
-    });
+    this.replaceChildObjectGeometries(obj, newGeometry);
   }
 
   public updateCylinderColor(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, newColor: string) {
-    obj.children.forEach((o) => {
-      const material = (o as THREE.Mesh).material as THREE.MeshStandardMaterial;
-      material.color = new THREE.Color(newColor);
-    });
+    this.updateChildObjectColors(obj, newColor);
   }
 }
 
