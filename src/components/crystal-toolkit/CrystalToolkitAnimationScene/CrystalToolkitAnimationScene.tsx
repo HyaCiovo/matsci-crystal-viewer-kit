@@ -352,6 +352,26 @@ export const CrystalToolkitAnimationScene: React.FC<CrystalToolkitAnimationScene
     bypassRenderingOnData: false
   });
 
+  useEffect(() => {
+    if (!scene.current) {
+      return;
+    }
+
+    const syncSceneSize = () => {
+      const mountNode = mountNodeRef.current;
+      if (!scene.current || !mountNode) {
+        return;
+      }
+      scene.current.attachToMountNode?.(mountNode);
+      scene.current.resizeRendererToDisplaySize();
+      scene.current.renderScene();
+    };
+
+    syncSceneSize();
+    const frameId = requestAnimationFrame(syncSceneSize);
+    return () => cancelAnimationFrame(frameId);
+  }, [expanded]);
+
   /**
    * Make atom move
    */

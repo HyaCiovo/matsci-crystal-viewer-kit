@@ -17,7 +17,7 @@ import {
   initialState
 } from './CameraContextProvider/camera-reducer';
 import { ExportType } from './scene/constants';
-import { SceneJsonObject } from './scene/simple-scene';
+import { SceneJsonObject } from './scene/scene-types';
 import Scene from './scene/Scene';
 import { ScenePosition } from './scene/inset-helper';
 import { subscribe, type Subscription } from './scene/download-event';
@@ -61,6 +61,7 @@ type UseSceneSharedEffectsConfig = {
   setProps: SetProps;
   animation?: string;
   bypassRenderingOnData: boolean;
+  forceRerenderKeys?: readonly unknown[];
 };
 
 let sceneComponentId = 0;
@@ -240,7 +241,8 @@ export const useSceneSharedEffects = ({
   imageRequest,
   setProps,
   animation,
-  bypassRenderingOnData
+  bypassRenderingOnData,
+  forceRerenderKeys = []
 }: UseSceneSharedEffectsConfig) => {
   useEffect(() => {
     if (!scene.current || !mountNodeDebugRef.current) {
@@ -260,11 +262,10 @@ export const useSceneSharedEffects = ({
 
     scene.current.addToScene(data, bypassRenderingOnData);
     if (bypassRenderingOnData) {
-      scene.current.renderScene();
       scene.current.resizeRendererToDisplaySize();
+      scene.current.renderScene();
     }
-    scene.current.toggleVisibility(toggleVisibility as any);
-  }, [bypassRenderingOnData, data, scene, toggleVisibility]);
+  }, [bypassRenderingOnData, data, scene, ...forceRerenderKeys]);
 
   useEffect(() => {
     if (!scene.current) {

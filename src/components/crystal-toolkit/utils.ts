@@ -1,13 +1,33 @@
 import * as THREE from 'three';
 
+const SHARED_THREE_RESOURCE_KEY = '__mcvSharedResource';
+
+type DisposableThreeResource = {
+  dispose?: () => void;
+  userData?: Record<string, any>;
+};
+
+export function markSharedThreeResource<T extends DisposableThreeResource>(resource: T): T {
+  resource.userData = resource.userData || {};
+  resource.userData[SHARED_THREE_RESOURCE_KEY] = true;
+  return resource;
+}
+
+export function isSharedThreeResource(resource?: DisposableThreeResource | null) {
+  return Boolean(resource?.userData?.[SHARED_THREE_RESOURCE_KEY]);
+}
+
 function disposeNode(node: THREE.Object3D) {
   if (node instanceof THREE.Mesh) {
-    if (node.geometry) {
+    if (node.geometry && !isSharedThreeResource(node.geometry)) {
       node.geometry.dispose();
     }
     if (node.material) {
       const materials = !Array.isArray(node.material) ? [node.material] : node.material;
       materials.forEach((mtrl) => {
+        if (isSharedThreeResource(mtrl)) {
+          return;
+        }
         const material = mtrl as THREE.Material & Partial<Record<string, any>>;
         material.map?.dispose?.();
         material.lightMap?.dispose?.();

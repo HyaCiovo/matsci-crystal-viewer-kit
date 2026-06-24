@@ -141,15 +141,20 @@
 
 :where(.mcv-theme, .mcv-root) .ms-modal-close,
 :where(.mcv-theme, .mcv-root) .ms-delete {
+  -webkit-appearance: none;
   appearance: none;
   border: 0;
   border-radius: 4px;
   background: transparent;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
   color: transparent;
   width: 2rem;
   height: 2rem;
+  padding: 0;
   cursor: pointer;
-  transition: background-color 160ms ease;
+  transition: none;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-modal-close::before,
@@ -164,6 +169,7 @@
   height: 2px;
   background: var(--mcv-color-surface);
   border-radius: 999px;
+  transition: background-color 160ms ease;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-modal-close,
@@ -185,6 +191,17 @@
 :where(.mcv-theme, .mcv-root) .ms-modal-close:focus-visible,
 :where(.mcv-theme, .mcv-root) .ms-delete:hover,
 :where(.mcv-theme, .mcv-root) .ms-delete:focus-visible {
-  background: rgba(15, 23, 42, 0.08);
+  background: transparent;
   outline: none;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-modal-close:hover::before,
+:where(.mcv-theme, .mcv-root) .ms-modal-close:hover::after,
+:where(.mcv-theme, .mcv-root) .ms-modal-close:focus-visible::before,
+:where(.mcv-theme, .mcv-root) .ms-modal-close:focus-visible::after,
+:where(.mcv-theme, .mcv-root) .ms-delete:hover::before,
+:where(.mcv-theme, .mcv-root) .ms-delete:hover::after,
+:where(.mcv-theme, .mcv-root) .ms-delete:focus-visible::before,
+:where(.mcv-theme, .mcv-root) .ms-delete:focus-visible::after {
+  background: var(--mcv-color-text);
 }

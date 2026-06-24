@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ThreePosition } from './constants';
-import { SceneJsonObject } from './simple-scene';
+import { SceneJsonObject } from './scene-types';
 
 export type SceneGraphJsonObject = SceneJsonObject & Record<string, any>;
 

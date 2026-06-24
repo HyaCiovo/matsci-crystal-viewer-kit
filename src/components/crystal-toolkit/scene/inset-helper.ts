@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { getSceneWithBackground, ThreeBuilder } from './three_builder';
 import { disposeSceneHierarchy } from '../utils';
 import { ThreePosition } from './constants';
-import type { SceneJsonObject } from './simple-scene';
+import type { SceneJsonObject } from './scene-types';
 
 export enum ScenePosition {
   NW = 'NW',

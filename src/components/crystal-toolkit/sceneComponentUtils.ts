@@ -1,5 +1,5 @@
 import { DEFAULT_SCENE_SIZE } from './scene/constants';
-import { SceneJsonObject } from './scene/simple-scene';
+import { SceneJsonObject } from './scene/scene-types';
 
 export type SceneDataLike = SceneJsonObject & { name?: string; contents?: SceneJsonObject[] };
 

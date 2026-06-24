@@ -16,7 +16,7 @@ import { getSceneWithBackground, ThreeBuilder } from './three_builder';
 import { createDebugController, type DebugController } from './debug-helper';
 import { disposeSceneHierarchy } from '../utils';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
-import { SceneJsonObject } from './simple-scene';
+import { SceneJsonObject } from './scene-types';
 import { createAnimationController, type AnimationController } from './animation-helper';
 import { createPhononAnimationController } from './phonon-animation-helper';
 import {
@@ -52,6 +52,12 @@ type VisibilityMap = Record<string, boolean>;
 type SceneClickReference = SceneInteractionReference<SceneJsonLike>;
 type SceneSize = { width: number; height: number };
 export default class Scene {
+  // THREE.Color already resolves CSS hex colors into the renderer's working color space.
+  private static readonly SELECTION_OUTLINE_COLOR: [number, number, number] = [
+    0.0021246888847058823,
+    0.030713443727452196,
+    0.1912016827303171
+  ];
   private destroyed = false;
   private controlsInitTimer: ReturnType<typeof setTimeout> | null = null;
   private settings: SceneSettings;
@@ -87,6 +93,8 @@ export default class Scene {
   // handle multiSelection via shift key
   private isMultiSelectionEnabled = false;
   private animationHelper: AnimationController;
+  private outlineDirty = false;
+  private mainViewportConfigured = false;
 
   private cacheMountBBox(mountNode: Element) {
     this.cachedMountNodeSize = { width: mountNode.clientWidth, height: mountNode.clientHeight };
@@ -132,6 +140,10 @@ export default class Scene {
     this.renderer = renderer;
     const { width, height } = this.getCachedMountBBox();
     this.renderer.setSize(width, height);
+    this.mainViewportConfigured = false;
+    if (this.renderer instanceof WebGLRenderer) {
+      this.syncMainViewport(this.renderer, { width, height });
+    }
     //TODO(chab) This should be simpler
     mountNode.appendChild(this.renderer.domElement);
   }
@@ -215,6 +227,23 @@ export default class Scene {
     return this.renderer;
   }
 
+  public attachToMountNode(mountNode: Element) {
+    if (this.destroyed || !this.renderer?.domElement || !this.labelRenderer?.domElement) {
+      return;
+    }
+
+    if (this.renderer.domElement.parentElement !== mountNode) {
+      mountNode.appendChild(this.renderer.domElement);
+    }
+    if (this.labelRenderer.domElement.parentElement !== mountNode) {
+      mountNode.appendChild(this.labelRenderer.domElement);
+    }
+
+    this.cacheMountBBox(mountNode);
+    this.mainViewportConfigured = false;
+    this.resizeRendererToDisplaySize();
+  }
+
   public updateCamera(position: Vector3, rotation?: Quaternion, zoom?: number) {
     this.camera.position.copy(position);
     if (zoom) {
@@ -244,6 +273,9 @@ export default class Scene {
             shiftKey: e.shiftKey
           }
         );
+        if (needRedraw) {
+          this.outlineDirty = true;
+        }
       }
       this.clickCallback(this.selectionController.getSelectedObjects());
     } else {
@@ -251,12 +283,18 @@ export default class Scene {
         this.clickCallback([]);
       }
       needRedraw = this.selectionController.clearSelection();
+      if (needRedraw) {
+        this.outlineDirty = true;
+      }
     }
 
     if (this.settings.secondaryObjectView) {
-      this.selectionController.hasOutlineChildren()
-        ? this.inset.showObject(this.selectionController.getOutlineChildren())
-        : this.inset.showAxis();
+      if (this.selectionController.hasOutlineChildren()) {
+        this.refreshOutlineIfNeeded();
+        this.inset.showObject(this.selectionController.getOutlineChildren());
+      } else {
+        this.inset.showAxis();
+      }
     }
     needRedraw && this.renderScene();
   }
@@ -364,13 +402,12 @@ export default class Scene {
     }
   }
 
-  private applyWebGLViewport(renderer: WebGLRenderer, size: SceneSize) {
-    renderer.clear();
+  private syncMainViewport(renderer: WebGLRenderer, size: SceneSize) {
     renderer.setSize(size.width, size.height);
-    //TODO(chab) not sure to understand why we have to turn on/off scissor tests between renderings
     renderer.setScissorTest(true);
     renderer.setScissor(0, 0, size.width, size.height);
     renderer.setViewport(0, 0, size.width, size.height);
+    this.mainViewportConfigured = true;
   }
 
   public resizeRendererToDisplaySize() {
@@ -384,7 +421,16 @@ export default class Scene {
     }
     this.syncLabelRendererLayout(size);
     this.syncSvgRendererSize(size);
-    if (canvas.width !== size.width || canvas.height !== size.height) {
+    const cssSizeChanged = canvas.clientWidth !== size.width || canvas.clientHeight !== size.height;
+    const pixelRatio = this.renderer instanceof WebGLRenderer ? this.renderer.getPixelRatio() : 1;
+    const bufferWidth = Math.round(size.width * pixelRatio);
+    const bufferHeight = Math.round(size.height * pixelRatio);
+    const bufferSizeChanged = canvas.width !== bufferWidth || canvas.height !== bufferHeight;
+    const sizeChanged = cssSizeChanged || bufferSizeChanged;
+    if (this.renderer instanceof WebGLRenderer && (sizeChanged || !this.mainViewportConfigured)) {
+      this.syncMainViewport(this.renderer, size);
+    }
+    if (sizeChanged) {
       this.renderScene();
     }
   }
@@ -410,6 +456,8 @@ export default class Scene {
     });
 
     if (this.selectionController.hasOutlineChildren()) {
+      this.outlineDirty = true;
+      this.refreshOutlineIfNeeded();
       this.inset.showObject(this.selectionController.getOutlineChildren());
     }
   }
@@ -475,6 +523,7 @@ export default class Scene {
     this.computeIdToThree = computeIdToThree;
     this.axis = axis as Object3D;
     this.axisJson = axisJson;
+    this.outlineDirty = true;
 
     // can cause memory leak
     //console.log('rootObject', rootObject, rootObject);
@@ -537,7 +586,7 @@ export default class Scene {
     if (this.controls) {
       this.controls.update();
     }
-    this.refreshOutline();
+    this.refreshOutlineIfNeeded();
     this.renderScene();
 
     this.frameId = window.requestAnimationFrame(() => this.animate());
@@ -547,8 +596,9 @@ export default class Scene {
     if (this.destroyed || !this.renderer || !this.camera || !this.scene) {
       return;
     }
+    this.refreshOutlineIfNeeded();
     if (this.renderer instanceof WebGLRenderer) {
-      this.applyWebGLViewport(this.renderer, this.getCachedMountBBox());
+      this.renderer.clear();
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -577,6 +627,7 @@ export default class Scene {
     }
     if (this.renderer instanceof WebGLRenderer) {
       this.inset.render(this.renderer, this.getInletOrigin(this.inletPosition));
+      this.syncMainViewport(this.renderer, this.getCachedMountBBox());
     }
   }
 
@@ -595,7 +646,9 @@ export default class Scene {
         obj.visible = Boolean(namesToVisibility[objName]);
       }
     });
-    this.selectionController.removeInvisibleSelections((id) => this.computeIdToThree[id]);
+    if (this.selectionController.removeInvisibleSelections((id) => this.computeIdToThree[id])) {
+      this.outlineDirty = true;
+    }
     this.renderScene();
   }
 
@@ -739,7 +792,7 @@ export default class Scene {
     //TODO(chab) look at three.js to implement the texture
     const outline = new OutlineEffect(this.renderer as WebGLRenderer, {
       defaultThickness: 0.01,
-      defaultColor: [0, 0, 0],
+      defaultColor: Scene.SELECTION_OUTLINE_COLOR,
       defaultAlpha: 1.0,
       defaultKeepAlive: true // keeps outline material in cache even if material is removed from scene
     });
@@ -760,6 +813,15 @@ export default class Scene {
       return;
     }
     this.selectionController.refreshOutline((id) => this.computeIdToThree[id]);
+    this.outlineDirty = false;
+  }
+
+  private refreshOutlineIfNeeded() {
+    if (!this.outlineDirty) {
+      return;
+    }
+
+    this.refreshOutline();
   }
 
   updateTime(time: number) {
@@ -767,7 +829,9 @@ export default class Scene {
       return;
     }
     this.animationHelper.updateTime(time);
-    this.refreshOutline();
+    if (this.selectionController.hasSelection()) {
+      this.outlineDirty = true;
+    }
     this.renderScene();
   }
 }

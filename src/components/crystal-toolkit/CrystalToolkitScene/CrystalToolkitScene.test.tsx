@@ -2,11 +2,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CrystalToolkitScene } from './CrystalToolkitScene';
-import { s2 as sceneData } from '../scene/simple-scene';
+import { s2 as sceneData } from '../fixtures/simple-scene';
 import { MOUNT_NODE_CLASS, Renderer } from '../scene/constants';
 import Scene from '../scene/Scene';
 
 const sceneApi = vi.hoisted(() => ({
+  attachToMountNode: vi.fn(),
   resizeRendererToDisplaySize: vi.fn(),
   renderScene: vi.fn(),
   enableDebug: vi.fn(),

@@ -34,7 +34,7 @@ import {
   useSceneSharedEffects
 } from '../sceneComponentShared';
 import { requestSceneExport } from '../sceneExport';
-import { getSceneSize, hasRenderableSceneData, hideTooltip } from '../sceneComponentUtils';
+import { getSceneSize, hideTooltip } from '../sceneComponentUtils';
 import { SceneToolbar } from '../SceneToolbar';
 
 export interface CrystalToolkitSceneProps {
@@ -278,8 +278,6 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
   const mountNodeDebugRef = useRef(null);
   // we use a ref to keep a reference to the underlying scene
   const scene = useRef<Scene | null>(null);
-  const sceneSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
-  const hasHandledInitialExpandedSync = useRef(false);
   const [expanded, setExpanded] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const { settingsPanel, bottomPanel, hasSettingsPanel, hasBottomPanel } = useScenePanels(
@@ -324,10 +322,8 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
       setProps: props.setProps
     });
     scene.current = sceneInstance;
-    sceneSubscriptionRef.current = subscription;
     return () => {
-      sceneSubscriptionRef.current?.unsubscribe();
-      sceneSubscriptionRef.current = null;
+      subscription.unsubscribe();
       sceneInstance.onDestroy();
       scene.current = null;
     };
@@ -346,7 +342,14 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
     imageRequest: props.imageRequest,
     setProps: props.setProps,
     animation: props.animation,
-    bypassRenderingOnData: true
+    bypassRenderingOnData: true,
+    forceRerenderKeys: [
+      props.inletSize,
+      props.inletPadding,
+      props.axisView,
+      props.settings,
+      props.onObjectClicked
+    ]
   });
 
   useEffect(() => {
@@ -355,9 +358,11 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
     }
 
     const syncSceneSize = () => {
-      if (!scene.current) {
+      const mountNode = mountNodeRef.current;
+      if (!scene.current || !mountNode) {
         return;
       }
+      scene.current.attachToMountNode?.(mountNode);
       scene.current.resizeRendererToDisplaySize();
       scene.current.renderScene();
     };
@@ -366,71 +371,6 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
     const frameId = requestAnimationFrame(syncSceneSize);
     return () => cancelAnimationFrame(frameId);
   }, [expanded]);
-
-  useEffect(() => {
-    if (!hasHandledInitialExpandedSync.current) {
-      hasHandledInitialExpandedSync.current = true;
-      return;
-    }
-
-    if (!mountNodeRef.current || !scene.current) {
-      return;
-    }
-
-    const reinitializeScene = () => {
-      if (!mountNodeRef.current) {
-        return;
-      }
-
-      sceneSubscriptionRef.current?.unsubscribe();
-      scene.current?.onDestroy();
-
-      const { scene: rebuiltScene, subscription } = createSceneLifecycle({
-        data: props.data,
-        mountNode: mountNodeRef.current,
-        settings: props.settings,
-        inletSize: props.inletSize,
-        inletPadding: props.inletPadding,
-        mountNodeDebug: mountNodeDebugRef.current ?? undefined,
-        onObjectClicked: props.onObjectClicked,
-        onCameraChange: (position, quaternion, zoom) => {
-          cameraDispatch?.({
-            type: CameraReducerAction.NEW_POSITION,
-            payload: {
-              componentId: componentIdRef.current,
-              position,
-              quaternion,
-              zoom
-            }
-          });
-        },
-        setProps: props.setProps
-      });
-
-      scene.current = rebuiltScene;
-      sceneSubscriptionRef.current = subscription;
-      if (props.debug && mountNodeDebugRef.current) {
-        rebuiltScene.enableDebug(props.debug, mountNodeDebugRef.current);
-      }
-
-      if (hasRenderableSceneData(props.data)) {
-        rebuiltScene.addToScene(props.data, true);
-        rebuiltScene.toggleVisibility(props.toggleVisibility as any);
-      }
-
-      rebuiltScene.resizeRendererToDisplaySize();
-      rebuiltScene.renderScene();
-
-      if (props.animation) {
-        rebuiltScene.updateAnimationStyle(props.animation as AnimationStyle);
-      }
-    };
-
-    const frameId = requestAnimationFrame(reinitializeScene);
-    return () => cancelAnimationFrame(frameId);
-  }, [
-    expanded
-  ]);
 
   const size = getSceneSize(props.sceneSize);
 

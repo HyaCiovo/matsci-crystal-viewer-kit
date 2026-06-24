@@ -2,6 +2,15 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.1 - 2026-06-24
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- optimize scene lifecycle to avoid fullscreen remounts and resize regressions
+- reduce runtime render overhead with cached outline and shared geometry/material reuse
+- remove legacy modal close background and align viewer control styling
+
+
 ## 0.1.0 - 2026-05-14
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

@@ -39,7 +39,7 @@ export default [
       chunkFileNames: 'chunks/[name]-[hash].js',
       preserveModules: true,
       preserveModulesRoot: 'src',
-      sourcemap: true,
+      sourcemap: false,
     },
     external: isExternal,
     treeshake,
@@ -73,7 +73,7 @@ function buildStyleConfig(input, outputFile, extractedCssFile) {
     output: {
       file: outputFile,
       format: 'esm',
-      sourcemap: true,
+      sourcemap: false,
     },
     treeshake,
     onwarn(warning, warn) {

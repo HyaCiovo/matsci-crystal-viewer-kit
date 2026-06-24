@@ -2,12 +2,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CrystalToolkitAnimationScene } from './CrystalToolkitAnimationScene';
-import { phonon_scene as sceneData } from '../scene/phonon-animation-scene';
+import { phonon_scene as sceneData } from '../fixtures/phonon-animation-scene';
 import { MOUNT_NODE_CLASS, Renderer } from '../scene/constants';
 import Scene from '../scene/Scene';
 
 const sceneApi = vi.hoisted(() => ({
+  attachToMountNode: vi.fn(),
   resizeRendererToDisplaySize: vi.fn(),
+  renderScene: vi.fn(),
   enableDebug: vi.fn(),
   addToScene: vi.fn(),
   toggleVisibility: vi.fn(),

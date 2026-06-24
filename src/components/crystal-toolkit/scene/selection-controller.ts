@@ -83,6 +83,21 @@ export function createSelectionController<T extends { id?: string }>(
     outlineScene.add(ensureOutlineObject(sceneObject));
   };
 
+  const hasSameSelectedIds = (nextSelectedObjects: T[]) => {
+    const currentIds = selectedObjects
+      .map((object) => object.id)
+      .filter((id): id is string => Boolean(id));
+    const nextIds = nextSelectedObjects
+      .map((object) => object.id)
+      .filter((id): id is string => Boolean(id));
+
+    if (currentIds.length !== nextIds.length) {
+      return false;
+    }
+
+    return currentIds.every((id, index) => id === nextIds[index]);
+  };
+
   return {
     getSelectedObjects() {
       return [...selectedObjects];
@@ -102,21 +117,22 @@ export function createSelectionController<T extends { id?: string }>(
       let changed = false;
 
       if (options.multiSelectEnabled) {
+        const nextSelectedObjects = [...selectedObjects];
         const existingOutlineIndex = outlineScene.children.findIndex(
           (child) => child.uuid === sceneObject.uuid
         );
-        const existingJsonIndex = selectedObjects.indexOf(jsonObject);
+        const existingJsonIndex = nextSelectedObjects.indexOf(jsonObject);
 
         if (existingJsonIndex > -1) {
-          selectedObjects.splice(existingJsonIndex, 1);
-          changed = true;
+          nextSelectedObjects.splice(existingJsonIndex, 1);
         } else if (options.shiftKey) {
-          selectedObjects.push(jsonObject);
-          changed = true;
+          nextSelectedObjects.push(jsonObject);
         } else {
-          selectedObjects = [jsonObject];
-          changed = true;
+          nextSelectedObjects.splice(0, nextSelectedObjects.length, jsonObject);
         }
+
+        changed = !hasSameSelectedIds(nextSelectedObjects);
+        selectedObjects = nextSelectedObjects;
 
         if (existingOutlineIndex > -1) {
           const existingOutlineObject = outlineScene.children[existingOutlineIndex];
@@ -132,10 +148,12 @@ export function createSelectionController<T extends { id?: string }>(
         return changed;
       }
 
+      changed =
+        selectedObjects.length !== 1 || selectedObjects[0] !== jsonObject || outlineScene.children.length !== 1;
       detachOutlineChildren({ disposeChildren: true, clearRegistry: true });
       addOutlineObject(sceneObject);
       selectedObjects = [jsonObject];
-      return true;
+      return changed;
     },
     clearSelection() {
       const hadSelection = selectedObjects.length > 0 || outlineScene.children.length > 0;

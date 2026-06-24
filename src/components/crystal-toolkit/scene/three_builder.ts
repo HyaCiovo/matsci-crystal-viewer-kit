@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   AmbientLight,
   DirectionalLight,
+  InstancedMesh,
   HemisphereLight,
   Object3D
 } from 'three';
@@ -17,6 +18,7 @@ import {
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { RadiusTubeBufferGeometry } from './RadiusTubeBufferGeometry';
+import { isSharedThreeResource, markSharedThreeResource } from '../utils';
 
 export const DEFAULT_DASHED_LINE_COLOR = '#000000';
 export const DEFAULT_LINE_COLOR = '#2c3c54';
@@ -50,6 +52,19 @@ type SegmentPlacement = {
   quaternion: THREE.Quaternion;
   length: number;
   end: THREE.Vector3;
+};
+
+type MaterialCacheEntry = {
+  material: THREE.Material;
+};
+
+type InstancedSphereObject = THREE.Object3D & {
+  userData: {
+    instancedSphere?: boolean;
+    baseRadius?: number;
+    spherePositions?: ThreePosition[];
+    [key: string]: unknown;
+  };
 };
 
 const RadiusTubeGeometryCtor = RadiusTubeBufferGeometry as unknown as new (
@@ -86,7 +101,77 @@ class QuadraticSteppedBezierCurver extends THREE.QuadraticBezierCurve3 {
  *
  */
 export class ThreeBuilder {
+  private sphereGeometryCache = new Map<string, THREE.SphereGeometry>();
+  private cylinderGeometryCache = new Map<string, THREE.CylinderGeometry>();
+  private headGeometryCache = new Map<string, THREE.ConeGeometry>();
+  private cubeGeometryCache = new Map<string, THREE.BoxGeometry>();
+  private materialCache = new Map<string, MaterialCacheEntry>();
+
   constructor(private settings: BuilderSettings) {}
+
+  private getMaterialCacheKey(color: string, opacity: number) {
+    return JSON.stringify({
+      renderer: this.settings.renderer,
+      materialType: this.settings.material.type,
+      materialParameters: this.settings.material.parameters,
+      color,
+      opacity
+    });
+  }
+
+  private getSphereGeometryCacheKey(radius: number, phiStart: number, phiEnd: number) {
+    return [radius, phiStart || 0, phiEnd || Math.PI * 2, this.settings.sphereSegments].join(':');
+  }
+
+  private getCylinderGeometryCacheKey(radiusTop: number, radiusBottom: number) {
+    return [radiusTop, radiusBottom, this.settings.cylinderSegments, this.settings.cylinderScale].join(
+      ':'
+    );
+  }
+
+  private getHeadGeometryCacheKey(headWidth: number, headLength: number) {
+    return [headWidth, headLength, this.settings.cylinderSegments, this.settings.cylinderScale].join(
+      ':'
+    );
+  }
+
+  private getCubeGeometryCacheKey(size: number) {
+    return [size].join(':');
+  }
+
+  private shouldUseInstancedSpheres(objectJson: SceneJsonLike) {
+    return Boolean(
+      !objectJson.animate &&
+        !objectJson.clickable &&
+        !objectJson.tooltip &&
+        !objectJson.hoverLabel &&
+        Array.isArray(objectJson.positions) &&
+        objectJson.positions.length > 1
+    );
+  }
+
+  private getInstancedSphereMesh(obj: THREE.Object3D) {
+    return obj.children[0] as InstancedMesh | undefined;
+  }
+
+  private updateInstancedSphereMatrices(
+    mesh: InstancedMesh,
+    positions: ThreePosition[],
+    radius: number
+  ) {
+    const matrix = new THREE.Matrix4();
+    const scaleVector = new THREE.Vector3(radius, radius, radius);
+    const quaternion = new THREE.Quaternion();
+
+    positions.forEach((position, index) => {
+      matrix.compose(new THREE.Vector3(...position), quaternion, scaleVector);
+      mesh.setMatrixAt(index, matrix);
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+  }
 
   private updateObjectColor(object: THREE.Object3D, color: string) {
     const material = (object as THREE.Object3D & {
@@ -120,7 +205,9 @@ export class ThreeBuilder {
     const geometryObject = object as THREE.Object3D & {
       geometry: THREE.BufferGeometry;
     };
-    geometryObject.geometry.dispose();
+    if (geometryObject.geometry && !isSharedThreeResource(geometryObject.geometry)) {
+      geometryObject.geometry.dispose();
+    }
     geometryObject.geometry = geometry;
   }
 
@@ -144,11 +231,17 @@ export class ThreeBuilder {
 
   private disposeMaterial(material: THREE.Material | THREE.Material[]) {
     if (Array.isArray(material)) {
-      material.forEach((entry) => entry.dispose());
+      material.forEach((entry) => {
+        if (!isSharedThreeResource(entry)) {
+          entry.dispose();
+        }
+      });
       return;
     }
 
-    material.dispose();
+    if (!isSharedThreeResource(material)) {
+      material.dispose();
+    }
   }
 
   private applyTransparentMaterialState(material: THREE.Material, opacity: number) {
@@ -381,7 +474,7 @@ export class ThreeBuilder {
 
   public makeCube(object_json: SceneJsonLike, obj: THREE.Object3D) {
     const size = object_json.width * this.settings.sphereScale;
-    const geom = new THREE.BoxGeometry(size, size, size);
+    const geom = this.getCubeGeometry(size);
     const mat = this.makeMaterial(object_json.color, object_json.animate);
     this.addPositionedMeshes(obj, object_json.positions, (position) => {
       const mesh = new THREE.Mesh(geom, mat);
@@ -395,7 +488,7 @@ export class ThreeBuilder {
   public makeSurfaces(object_json: SceneJsonLike, obj: THREE.Object3D) {
     const geom = this.createPositionGeometry(object_json.positions);
     const opacity = object_json.opacity || this.settings.defaultSurfaceOpacity;
-    const mat = this.makeMaterial(object_json.color, object_json.animate, opacity);
+    const mat = this.makeMaterial(object_json.color, object_json.animate, opacity).clone();
 
     if (object_json.normals) {
       const normals = new THREE.Float32BufferAttribute(mergeInnerArrays(object_json.normals), 3);
@@ -419,7 +512,7 @@ export class ThreeBuilder {
   public makeConvex(object_json: SceneJsonLike, obj: THREE.Object3D) {
     const geom = this.createConvexGeometry(object_json.positions);
     const opacity = object_json.opacity || this.settings.defaultSurfaceOpacity;
-    const mat = this.makeMaterial(object_json.color, object_json.animate, opacity);
+    const mat = this.makeMaterial(object_json.color, object_json.animate, opacity).clone();
     this.applyTransparentMaterialState(mat, opacity);
 
     const mesh = new THREE.Mesh(geom, mat);
@@ -430,11 +523,19 @@ export class ThreeBuilder {
   }
 
   public getHeadGeometry(headWidth: number, headLength: number): THREE.ConeGeometry {
-    return new THREE.ConeGeometry(
-      headWidth * this.settings.cylinderScale,
-      headLength * this.settings.cylinderScale,
-      this.settings.cylinderSegments
+    const scaledWidth = headWidth * this.settings.cylinderScale;
+    const scaledLength = headLength * this.settings.cylinderScale;
+    const key = this.getHeadGeometryCacheKey(scaledWidth, scaledLength);
+    const cachedGeometry = this.headGeometryCache.get(key);
+    if (cachedGeometry) {
+      return cachedGeometry;
+    }
+
+    const geometry = markSharedThreeResource(
+      new THREE.ConeGeometry(scaledWidth, scaledLength, this.settings.cylinderSegments)
     );
+    this.headGeometryCache.set(key, geometry);
+    return geometry;
   }
 
   public getCylinderGeometry(
@@ -442,16 +543,25 @@ export class ThreeBuilder {
     radiusTop?: number,
     radiusBottom?: number
   ): THREE.CylinderGeometry {
-    // body
-    radiusTop == undefined && (radiusTop = radius);
-    radiusBottom == undefined && (radiusBottom = radius);
+    const resolvedRadiusTop = (radiusTop == undefined ? radius : radiusTop) * this.settings.cylinderScale;
+    const resolvedRadiusBottom =
+      (radiusBottom == undefined ? radius : radiusBottom) * this.settings.cylinderScale;
+    const key = this.getCylinderGeometryCacheKey(resolvedRadiusTop, resolvedRadiusBottom);
+    const cachedGeometry = this.cylinderGeometryCache.get(key);
+    if (cachedGeometry) {
+      return cachedGeometry;
+    }
 
-    return new THREE.CylinderGeometry(
-      radiusTop * this.settings.cylinderScale,
-      radiusBottom * this.settings.cylinderScale,
-      1.0,
-      this.settings.cylinderSegments
+    const geometry = markSharedThreeResource(
+      new THREE.CylinderGeometry(
+        resolvedRadiusTop,
+        resolvedRadiusBottom,
+        1.0,
+        this.settings.cylinderSegments
+      )
     );
+    this.cylinderGeometryCache.set(key, geometry);
+    return geometry;
   }
 
   public makeArrow(object_json: SceneJsonLike, obj: THREE.Object3D) {
@@ -484,19 +594,34 @@ export class ThreeBuilder {
   //Note(chab) we use morphtargets for geometries like cube, convex, beziers
   // objects that are built by scaling and rotating a simple geometry should
   // be animated by interpolating those specific properties
-  public makeMaterial(color = DEFAULT_MATERIAL_COLOR, _animated = false, opacity = 1.0) {
+  public makeMaterial(
+    color = DEFAULT_MATERIAL_COLOR,
+    _animated = false,
+    opacity = 1.0,
+    options: { shared?: boolean } = {}
+  ) {
+    const cacheKey = this.getMaterialCacheKey(color, opacity);
+    const cachedEntry = this.materialCache.get(cacheKey);
+    if (cachedEntry) {
+      return options.shared ? cachedEntry.material : cachedEntry.material.clone();
+    }
+
     const parameters = Object.assign({}, this.settings.material.parameters, {
       color: color,
       opacity: opacity
     });
 
     if (this.settings.renderer === Renderer.SVG) {
-      return new THREE.MeshBasicMaterial(parameters);
+      const material = markSharedThreeResource(new THREE.MeshBasicMaterial(parameters));
+      this.materialCache.set(cacheKey, { material });
+      return options.shared ? material : material.clone();
     }
 
     switch (this.settings.material.type) {
       case Material.standard: {
-        return new THREE.MeshStandardMaterial(parameters);
+        const material = markSharedThreeResource(new THREE.MeshStandardMaterial(parameters));
+        this.materialCache.set(cacheKey, { material });
+        return options.shared ? material : material.clone();
       }
       default:
         throw new Error('Unknown material.');
@@ -504,12 +629,36 @@ export class ThreeBuilder {
   }
 
   public makeSphere(object_json: SceneJsonLike, obj: THREE.Object3D) {
+    const sphereRadius = object_json.radius * this.settings.sphereScale;
     const { geom, mat } = this.getSphereBuffer(
-      object_json.radius * this.settings.sphereScale,
+      sphereRadius,
       object_json.color,
       object_json.phiStart,
       object_json.phiEnd
     );
+
+    if (this.shouldUseInstancedSpheres(object_json)) {
+      const unitGeometry = this.getSphereGeometry(
+        1,
+        object_json.phiStart,
+        object_json.phiEnd
+      );
+      const instancedMesh = new THREE.InstancedMesh(
+        unitGeometry,
+        this.makeMaterial(object_json.color, object_json.animate, 1.0, { shared: true }),
+        object_json.positions.length
+      );
+      instancedMesh.name = `${object_json.type || 'sphere'}-instances`;
+      this.updateInstancedSphereMatrices(instancedMesh, object_json.positions, sphereRadius);
+      (obj as InstancedSphereObject).userData.instancedSphere = true;
+      (obj as InstancedSphereObject).userData.baseRadius = sphereRadius;
+      (obj as InstancedSphereObject).userData.spherePositions = object_json.positions.map(
+        (position: ThreePosition) => [...position] as ThreePosition
+      );
+      obj.add(instancedMesh);
+      return obj;
+    }
+
     this.addPositionedMeshes(obj, object_json.positions, (position) => {
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(...position);
@@ -600,14 +749,23 @@ export class ThreeBuilder {
   }
 
   public getSphereGeometry(radius: number, phiStart: number, phiEnd: number) {
-    const geom = new THREE.SphereGeometry(
-      radius,
-      this.settings.sphereSegments,
-      this.settings.sphereSegments,
-      phiStart || 0,
-      phiEnd || Math.PI * 2
+    const key = this.getSphereGeometryCacheKey(radius, phiStart, phiEnd);
+    const cachedGeometry = this.sphereGeometryCache.get(key);
+    if (cachedGeometry) {
+      return cachedGeometry;
+    }
+
+    const geometry = markSharedThreeResource(
+      new THREE.SphereGeometry(
+        radius,
+        this.settings.sphereSegments,
+        this.settings.sphereSegments,
+        phiStart || 0,
+        phiEnd || Math.PI * 2
+      )
     );
-    return geom;
+    this.sphereGeometryCache.set(key, geometry);
+    return geometry;
   }
 
   private getSphereBuffer(radius: number, color: string, phiStart: number, phiEnd: number) {
@@ -670,11 +828,34 @@ export class ThreeBuilder {
     newPosition: ThreePosition,
     index: number
   ) {
+    if ((obj as InstancedSphereObject).userData.instancedSphere) {
+      const mesh = this.getInstancedSphereMesh(obj);
+      const radius = ((obj as InstancedSphereObject).userData.baseRadius as number | undefined) ?? 1;
+      const positions = (obj as InstancedSphereObject).userData.spherePositions ?? [];
+      positions[index] = [...newPosition];
+      if (mesh) {
+        this.updateInstancedSphereMatrices(mesh, positions, radius);
+      }
+      return;
+    }
+
     const mesh = obj.children[index] as THREE.Mesh;
     mesh.position.set(...newPosition);
   }
 
   public updateSphereColor(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, newColor: string) {
+    if ((obj as InstancedSphereObject).userData.instancedSphere) {
+      const mesh = this.getInstancedSphereMesh(obj);
+      if (mesh) {
+        const material = mesh.material as THREE.Material;
+        const nextMaterial = this.createMaterialVariant(material, newColor);
+        mesh.material = nextMaterial;
+        if (!isSharedThreeResource(material)) {
+          material.dispose();
+        }
+      }
+      return;
+    }
     this.updateChildObjectColors(obj, newColor);
   }
 
@@ -690,6 +871,19 @@ export class ThreeBuilder {
   }
 
   public updateSphereRadius(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, newRadius: number) {
+    if ((obj as InstancedSphereObject).userData.instancedSphere) {
+      const mesh = this.getInstancedSphereMesh(obj);
+      if (!mesh) {
+        return;
+      }
+
+      const positions = (obj as InstancedSphereObject).userData.spherePositions ?? [];
+
+      this.updateInstancedSphereMatrices(mesh, positions, newRadius);
+      (obj as InstancedSphereObject).userData.baseRadius = newRadius;
+      return;
+    }
+
     const geometry = (obj.children[0] as THREE.Mesh).geometry as THREE.SphereGeometry;
     const phiStart = geometry.parameters.phiStart;
     const phiEnd = geometry.parameters.phiLength;
@@ -786,6 +980,18 @@ export class ThreeBuilder {
 
   public updateCylinderColor(obj: THREE.Object3D, _baseJsonObject: SceneJsonLike, newColor: string) {
     this.updateChildObjectColors(obj, newColor);
+  }
+
+  private getCubeGeometry(size: number) {
+    const key = this.getCubeGeometryCacheKey(size);
+    const cachedGeometry = this.cubeGeometryCache.get(key);
+    if (cachedGeometry) {
+      return cachedGeometry;
+    }
+
+    const geometry = markSharedThreeResource(new THREE.BoxGeometry(size, size, size));
+    this.cubeGeometryCache.set(key, geometry);
+    return geometry;
   }
 }
 

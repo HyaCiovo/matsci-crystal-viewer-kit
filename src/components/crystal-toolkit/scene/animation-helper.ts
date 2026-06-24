@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BufferAttribute, BufferGeometry } from 'three';
 import { JSON3DObject } from './constants';
-import { SceneJsonObject } from './simple-scene';
+import { SceneJsonObject } from './scene-types';
 import { ThreeBuilder } from './three_builder';
 import {
   type AnimationType,
