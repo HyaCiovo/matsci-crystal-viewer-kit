@@ -1,5 +1,9 @@
 # matsci-ui Crystal Viewer Extraction Notes
 
+本文档保留为历史抽离记录，用于说明 `matsci-crystal-viewer-kit` 最初从 `matsci-ui` 拆分时的边界判断。
+
+它不是当前包的主使用文档，也不代表最新的对外接入说明。当前主文档请优先参考仓库根目录 `README.md`。
+
 ## Boundary
 
 The crystal viewer surface in `matsci-ui` is extractable as a focused package

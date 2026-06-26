@@ -23,11 +23,11 @@
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] {
-  top: 0.75rem;
-  right: 0.75rem;
+  top: 1rem;
+  right: 1rem;
   padding-top: 0;
   padding-right: 0;
-  padding-bottom: 0.5rem;
+  padding-bottom: 0;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-button-bar > * {
@@ -69,21 +69,22 @@
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] .ms-button {
-  width: 2rem;
-  min-width: 2rem;
-  height: 2rem;
-  min-height: 2rem;
+  width: 2.5rem;
+  min-width: 2.5rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
   padding: 0;
-  border: 1px solid var(--mcv-color-primary);
+  border: 1px solid color-mix(in srgb, var(--mcv-color-primary) 14%, white);
   border-radius: 0;
-  background: var(--mcv-color-primary);
-  box-shadow: 0 12px 28px -20px color-mix(in srgb, var(--mcv-color-primary) 44%, transparent);
-  color: var(--mcv-color-primary-contrast);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 36px -24px rgba(7, 49, 121, 0.36);
+  color: var(--mcv-color-primary);
+  backdrop-filter: blur(14px);
   margin: 0;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > * {
-  width: 2rem;
+  width: 2.5rem;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] [data-slot='menu'],
@@ -103,7 +104,7 @@
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:first-child,
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:first-child .ms-button {
-  border-radius: 4px 4px 0 0;
+  border-radius: 12px 12px 0 0;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:not(:first-child) .ms-button,
@@ -119,18 +120,20 @@
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:last-child,
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] > *:last-child .ms-button {
-  border-radius: 0 0 4px 4px;
+  border-radius: 0 0 12px 12px;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] .ms-button:hover {
-  border-color: color-mix(in srgb, var(--mcv-color-primary) 88%, black);
-  background: color-mix(in srgb, var(--mcv-color-primary) 88%, black);
-  color: var(--mcv-color-primary-contrast);
+  border-color: color-mix(in srgb, var(--mcv-color-primary) 24%, white);
+  background: color-mix(in srgb, white 84%, var(--mcv-color-primary) 16%);
+  color: var(--mcv-color-primary);
+  transform: translateX(-1px);
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene [data-slot='toolbar'] .ms-button svg {
-  width: 0.88rem;
-  height: 0.88rem;
+  width: 1rem;
+  height: 1rem;
+  stroke-width: 2.05;
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene-square {
@@ -172,19 +175,20 @@
 
 :where(.mcv-theme, .mcv-root) .ms-scene-settings-panel {
   position: absolute;
-  right: 4.5rem;
+  right: 5.25rem;
   max-height: 100%;
   max-width: 450px;
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--mcv-border-color);
-  border-radius: var(--mcv-border-radius);
+  border-radius: 16px;
   padding: 1.25rem;
-  background-color: color-mix(in srgb, var(--mcv-color-surface) 88%, transparent);
+  background-color: color-mix(in srgb, var(--mcv-color-surface) 92%, transparent);
   box-shadow: var(--mcv-shadow-floating);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--mcv-border-color-hover) 65%, transparent) transparent;
   z-index: 4;
+  backdrop-filter: blur(18px);
 }
 
 :where(.mcv-theme, .mcv-root) .ms-scene-settings-panel::-webkit-scrollbar {
@@ -224,7 +228,21 @@
 :where(.mcv-theme, .mcv-root) .ms-scene .ms-dropdown-content {
   position: absolute;
   right: 0;
-  min-width: 100px;
+  min-width: 11rem;
+}
+
+:where(.mcv-theme, .mcv-root) .mcv-story-viewer .ms-scene {
+  min-height: 620px;
+}
+
+:where(.mcv-theme, .mcv-root) .mcv-story-viewer .ms-scene-square-wrapper {
+  max-width: min(100%, 760px);
+}
+
+:where(.mcv-theme, .mcv-root) .mcv-story-viewer .ms-scene-square {
+  width: 100% !important;
+  height: min(68vw, 760px) !important;
+  max-height: 760px;
 }
 
 :where(.mcv-theme, .mcv-root)[data-slot='overlay-root'].ms-modal.ms-is-active [data-slot='overlay-content'],

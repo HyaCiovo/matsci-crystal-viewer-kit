@@ -1,4 +1,10 @@
+.storybook-static-*
+.storybook-static-test
 storybook-static
+coverage
+playwright-report
+test-results
+debug-storybook.log
 node_modules
 dist
 .npm-cache
