@@ -2,6 +2,26 @@
 
 `@gnosys/matsci-crystal-viewer-kit` 是一个面向材料结构展示场景的 React + Three.js 组件包，提供完整的晶体结构 3D viewer 运行时、工具栏、设置面板挂载位、图例挂载位、截图与模型导出能力。
 
+## GitHub Overview
+
+`matsci-crystal-viewer-kit` is a reusable crystal structure viewer toolkit for materials applications. It focuses on a production-oriented 3D viewer shell built with React and Three.js, including scene rendering, interaction, export, and host-side customization hooks.
+
+If this project is useful to you, welcome to star the repository and open pull requests. Contributions for bug fixes, documentation improvements, and especially internationalization support are welcome.
+
+## Package Availability
+
+This package is currently not published to the public npm registry. It is only used inside our team's private registry and internal projects for now.
+
+If you want to use it outside our internal environment, you need to build and pack it locally first, then consume the generated tarball in your own project.
+
+Typical local packaging flow:
+
+```bash
+pnpm install
+pnpm build
+pnpm pack
+```
+
 它不是一个“页面级应用组件集合”，而是一个专注于晶体结构可视化的底层能力包。你可以把它理解为：
 
 - 一个以 `Scene JSON` 为输入的数据驱动 3D 渲染运行时
@@ -30,6 +50,7 @@
 15. [宿主集成建议](#宿主集成建议)
 16. [开发命令](#开发命令)
 17. [发布](#发布)
+
 ## 项目定位
 
 `matsci-crystal-viewer-kit` 从 `matsci-ui` 中抽离出来，目标非常明确：
@@ -80,6 +101,9 @@
 这意味着它不再只是“某个页面里长出来的 3D 组件”，而是一个可以在多个宿主项目中复用的结构展示基础设施。
 
 ## 安装
+
+如果你已经接入团队内部私有 registry，可以按下面的包名安装。  
+如果没有接入，需要先在本地自行打包后再使用。
 
 ```bash
 pnpm add @gnosys/matsci-crystal-viewer-kit
@@ -714,3 +738,17 @@ pnpm release minor --notes-file ./release-notes.md
 - registry 发布
 
 registry 配置见 [package.json](./package.json)。
+
+## Contributing
+
+欢迎提交 issue 和 PR。
+
+适合直接贡献的方向包括：
+
+- bug 修复
+- 文档改进
+- 示例补充
+- 可访问性与交互细节优化
+- 国际化与多语言支持
+
+如果你计划引入较大的行为变更，建议先在 issue 里说明目标、约束和兼容性影响。
