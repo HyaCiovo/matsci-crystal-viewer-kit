@@ -9,7 +9,7 @@
 - 一个已经完成过一轮生命周期、性能和展示优化收敛的工程化组件库
 
 如果你只是想快速接入，直接看“快速开始”和“常用 Props”。  
-如果你要维护、扩展、写技术博客、写汇报材料或整理软著说明，建议从“设计目标”“架构概览”“高性能设计”开始。
+如果你要维护或扩展，建议从“设计目标”“架构概览”“高性能设计”开始。
 
 ## 目录
 
@@ -30,8 +30,6 @@
 15. [宿主集成建议](#宿主集成建议)
 16. [开发命令](#开发命令)
 17. [发布](#发布)
-18. [路线图与后续优化方向](#路线图与后续优化方向)
-
 ## 项目定位
 
 `matsci-crystal-viewer-kit` 从 `matsci-ui` 中抽离出来，目标非常明确：
@@ -104,7 +102,7 @@ import '@gnosys/matsci-crystal-viewer-kit/style.css';
 
 ## 对外导出
 
-根入口 [src/index.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/index.ts) 当前导出：
+根入口 [src/index.ts](./src/index.ts) 当前导出：
 
 - `CameraContextProvider`
 - `CrystalToolkitAnimationScene`
@@ -164,7 +162,7 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 ## 常用 Props
 
-以 [CrystalToolkitScene.tsx](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/CrystalToolkitScene/CrystalToolkitScene.tsx) 为例，最常用的 props 如下：
+以 [CrystalToolkitScene.tsx](./src/components/crystal-toolkit/CrystalToolkitScene/CrystalToolkitScene.tsx) 为例，最常用的 props 如下：
 
 ### 基础渲染
 
@@ -248,7 +246,7 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 - 数据和渲染职责解耦
 - 更容易做跨项目接入与协议演进
 
-从代码看，类型收敛在 [scene-types.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-types.ts)。
+从代码看，类型收敛在 [scene-types.ts](./src/components/crystal-toolkit/scene/scene-types.ts)。
 
 典型对象类型包括：
 
@@ -285,7 +283,7 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 核心目录位于：
 
-[src/components/crystal-toolkit](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit)
+[src/components/crystal-toolkit](./src/components/crystal-toolkit)
 
 可以按职责分成五层。
 
@@ -293,10 +291,10 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 主要文件：
 
-- [CrystalToolkitScene.tsx](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/CrystalToolkitScene/CrystalToolkitScene.tsx)
-- [CrystalToolkitAnimationScene.tsx](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/CrystalToolkitAnimationScene/CrystalToolkitAnimationScene.tsx)
-- [PhononAnimationScene.tsx](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/PhononAnimationScene/PhononAnimationScene.tsx)
-- [SceneToolbar.tsx](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/SceneToolbar.tsx)
+- [CrystalToolkitScene.tsx](./src/components/crystal-toolkit/CrystalToolkitScene/CrystalToolkitScene.tsx)
+- [CrystalToolkitAnimationScene.tsx](./src/components/crystal-toolkit/CrystalToolkitAnimationScene/CrystalToolkitAnimationScene.tsx)
+- [PhononAnimationScene.tsx](./src/components/crystal-toolkit/PhononAnimationScene/PhononAnimationScene.tsx)
+- [SceneToolbar.tsx](./src/components/crystal-toolkit/SceneToolbar.tsx)
 
 职责：
 
@@ -309,9 +307,9 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 主要文件：
 
-- [sceneComponentShared.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/sceneComponentShared.ts)
-- [sceneComponentUtils.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/sceneComponentUtils.ts)
-- [sceneExport.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/sceneExport.ts)
+- [sceneComponentShared.ts](./src/components/crystal-toolkit/sceneComponentShared.ts)
+- [sceneComponentUtils.ts](./src/components/crystal-toolkit/sceneComponentUtils.ts)
+- [sceneExport.ts](./src/components/crystal-toolkit/sceneExport.ts)
 
 职责：
 
@@ -324,7 +322,7 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 核心文件：
 
-- [Scene.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/Scene.ts)
+- [Scene.ts](./src/components/crystal-toolkit/scene/Scene.ts)
 
 职责：
 
@@ -337,15 +335,15 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 主要文件：
 
-- [scene-controls.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-controls.ts)
-- [scene-camera.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-camera.ts)
-- [scene-graph.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-graph.ts)
-- [scene-hit-test.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-hit-test.ts)
-- [scene-interaction.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-interaction.ts)
-- [scene-object-registry.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-object-registry.ts)
-- [selection-controller.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/selection-controller.ts)
-- [tooltip-helper.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/tooltip-helper.ts)
-- [inset-helper.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/inset-helper.ts)
+- [scene-controls.ts](./src/components/crystal-toolkit/scene/scene-controls.ts)
+- [scene-camera.ts](./src/components/crystal-toolkit/scene/scene-camera.ts)
+- [scene-graph.ts](./src/components/crystal-toolkit/scene/scene-graph.ts)
+- [scene-hit-test.ts](./src/components/crystal-toolkit/scene/scene-hit-test.ts)
+- [scene-interaction.ts](./src/components/crystal-toolkit/scene/scene-interaction.ts)
+- [scene-object-registry.ts](./src/components/crystal-toolkit/scene/scene-object-registry.ts)
+- [selection-controller.ts](./src/components/crystal-toolkit/scene/selection-controller.ts)
+- [tooltip-helper.ts](./src/components/crystal-toolkit/scene/tooltip-helper.ts)
+- [inset-helper.ts](./src/components/crystal-toolkit/scene/inset-helper.ts)
 
 职责：
 
@@ -356,10 +354,10 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 主要文件：
 
-- [three_builder.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/three_builder.ts)
-- [animation-helper.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/animation-helper.ts)
-- [phonon-animation-helper.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/phonon-animation-helper.ts)
-- [RadiusTubeBufferGeometry.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/RadiusTubeBufferGeometry.ts)
+- [three_builder.ts](./src/components/crystal-toolkit/scene/three_builder.ts)
+- [animation-helper.ts](./src/components/crystal-toolkit/scene/animation-helper.ts)
+- [phonon-animation-helper.ts](./src/components/crystal-toolkit/scene/phonon-animation-helper.ts)
+- [RadiusTubeBufferGeometry.ts](./src/components/crystal-toolkit/scene/RadiusTubeBufferGeometry.ts)
 
 职责：
 
@@ -498,11 +496,11 @@ flowchart TD
 
 `SceneJsonObject` 等类型已经收敛到：
 
-- [scene-types.ts](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/scene/scene-types.ts)
+- [scene-types.ts](./src/components/crystal-toolkit/scene/scene-types.ts)
 
 示例数据迁移到：
 
-- [fixtures](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/fixtures)
+- [fixtures](./src/components/crystal-toolkit/fixtures)
 
 这样运行时代码不再依赖大 fixture 文件，打包边界更干净，也为后续 tree shaking 和 bundle 分析提供了更清晰的结构。
 
@@ -520,7 +518,7 @@ flowchart TD
 
 核心实现位于：
 
-- [SceneToolbar.tsx](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/components/crystal-toolkit/SceneToolbar.tsx)
+- [SceneToolbar.tsx](./src/components/crystal-toolkit/SceneToolbar.tsx)
 
 ### 选择与高亮
 
@@ -655,7 +653,7 @@ import '@gnosys/matsci-crystal-viewer-kit/style.css';
 - `pnpm build-storybook`
 - `pnpm release:pack`
 
-当前 scripts 位于 [package.json](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/package.json)：
+当前 scripts 位于 [package.json](./package.json)：
 
 ```bash
 pnpm typecheck
@@ -669,7 +667,7 @@ pnpm release:pack
 其中：
 
 - `build` 会清理 `dist`、执行 rollup 构建并准备样式产物
-- `storybook` 会启动组件独立演示面，适合做截图、回归和软著材料演示
+- `storybook` 会启动组件独立演示面，适合做截图和回归验证
 - `build-storybook` 会产出静态演示站点
 - `prepack` 已配置，所以 `npm pack` / `npm publish` 时会自动构建
 
@@ -691,7 +689,7 @@ pnpm release:pack
 
 这些结构当前在 Storybook 中的本地文件位置：
 
-- [src/demo/fixtures](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/src/demo/fixtures)
+- [src/demo/fixtures](./src/demo/fixtures)
 
 这些 `json` 已经由本地 `material-search` 数据离线生成。Storybook 不会在运行时请求接口，也不会依赖 token、代理或 `structure-service`。
 
@@ -715,46 +713,4 @@ pnpm release minor --notes-file ./release-notes.md
 - 构建与发布前检查
 - registry 发布
 
-registry 配置见 [package.json](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/package.json)。
-
-## 路线图与后续优化方向
-
-下面这些方向是“值得继续做”，但不应和已实现能力混淆：
-
-### 1. 多面体结果缓存
-
-如果宿主本地仍会按 `cifText + bondTolerance` 反复构建 polyhedra，可以继续做：
-
-- polyhedra 结果缓存
-- 按结构文本与容差复用结果
-
-### 2. InstancedMesh / batching
-
-对于大规模原子点和重复结构，继续向：
-
-- `InstancedMesh`
-- sphere / cylinder batching
-
-推进仍然有价值。
-
-### 3. 更细粒度的按需渲染
-
-当前静态场景已经比早期版本收敛很多，但未来仍可继续做：
-
-- 相机静止时减少非必要刷新
-- 更细粒度的 dirty flag 传播
-
-### 4. Worker 化的本地重计算
-
-如果宿主需要在浏览器本地做更重的多面体或拓扑计算，未来可以考虑迁移到 Worker。
-
-## 附加文档
-
-当前仓库的文档分工如下：
-
-- 当前这个 `README`：作为包的主说明文档，负责安装、接入、架构、API 和性能设计总览
-- [docs/晶体展示组件功能与优化综述.md](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/docs/晶体展示组件功能与优化综述.md)：更适合项目汇报、技术博客和“已落地优化成果”整理
-- [docs/晶体结构可视化组件软著说明书.md](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/docs/晶体结构可视化组件软著说明书.md)：更适合软著、申报和正式材料场景
-- [docs/extraction-feasibility.md](/Users/zhujiruo/Desktop/szlab/matsci-crystal-viewer-kit/docs/extraction-feasibility.md)：保留为历史抽离边界记录，主要面向维护者
-
-此前独立存在的“设计与使用说明”文档已被合并进本 README，以减少重复维护和文档漂移。
+registry 配置见 [package.json](./package.json)。

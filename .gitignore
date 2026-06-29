@@ -9,3 +9,4 @@ node_modules
 dist
 .npm-cache
 .npmrc
+docs/

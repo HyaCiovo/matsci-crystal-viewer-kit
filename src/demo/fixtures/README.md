@@ -21,4 +21,4 @@
 - `379864.json`
 - `463206.json`
 
-这些文件已经由本地 `material-search` 结构数据离线生成，可直接用于 Storybook 演示、截图和软著材料。
+这些文件已经由本地 `material-search` 结构数据离线生成，可直接用于 Storybook 演示和截图。
