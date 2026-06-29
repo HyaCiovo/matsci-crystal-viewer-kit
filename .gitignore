@@ -8,3 +8,4 @@ debug-storybook.log
 node_modules
 dist
 .npm-cache
+.npmrc
