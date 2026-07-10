@@ -6,7 +6,7 @@ import { Tooltip } from '../data-display/Tooltip';
 import Scene from './scene/Scene';
 import { ExportType } from './scene/constants';
 import type { CrystalToolkitSceneTexts } from './sceneControlTexts';
-import { requestSceneExport } from './sceneExport';
+import { requestSceneExport, type SceneExportFileNames } from './sceneExport';
 import { hideTooltip } from './sceneComponentUtils';
 
 type SetProps = (value: any) => any;
@@ -24,6 +24,8 @@ export interface SceneToolbarProps {
   tooltipId: string;
   texts: CrystalToolkitSceneTexts;
   fileOptions?: string[];
+  exportFilePrefix?: string;
+  exportFileNames?: SceneExportFileNames;
   showExpandButton?: boolean;
   showImageButton?: boolean;
   showExportButton?: boolean;
@@ -43,6 +45,8 @@ export function SceneToolbar({
   tooltipId,
   texts,
   fileOptions,
+  exportFilePrefix,
+  exportFileNames,
   showExpandButton = true,
   showImageButton = true,
   showExportButton = true,
@@ -107,7 +111,10 @@ export function SceneToolbar({
                   key="image-export-png"
                   className="ms-dropdown-item"
                   onClick={() => {
-                    requestSceneExport(ExportType.png, sceneRef.current!, setProps);
+                    requestSceneExport(ExportType.png, sceneRef.current!, setProps, {
+                      exportFilePrefix,
+                      exportFileNames
+                    });
                   }}
                 >
                   {texts.screenshotPng}
@@ -116,7 +123,10 @@ export function SceneToolbar({
                   key="image-export-gltf"
                   className="ms-dropdown-item"
                   onClick={() => {
-                    requestSceneExport(ExportType.gltf, sceneRef.current!, setProps);
+                    requestSceneExport(ExportType.gltf, sceneRef.current!, setProps, {
+                      exportFilePrefix,
+                      exportFileNames
+                    });
                   }}
                 >
                   {texts.modelGltf}
@@ -125,7 +135,10 @@ export function SceneToolbar({
                   key="image-export-glb"
                   className="ms-dropdown-item"
                   onClick={() => {
-                    requestSceneExport(ExportType.glb, sceneRef.current!, setProps);
+                    requestSceneExport(ExportType.glb, sceneRef.current!, setProps, {
+                      exportFilePrefix,
+                      exportFileNames
+                    });
                   }}
                 >
                   {texts.modelGlb}
@@ -134,7 +147,10 @@ export function SceneToolbar({
                   key="image-export-usdz"
                   className="ms-dropdown-item"
                   onClick={() => {
-                    requestSceneExport(ExportType.usdz, sceneRef.current!, setProps);
+                    requestSceneExport(ExportType.usdz, sceneRef.current!, setProps, {
+                      exportFilePrefix,
+                      exportFileNames
+                    });
                   }}
                 >
                   {texts.augmentedRealityIosOnly}

@@ -26,6 +26,7 @@ import {
   type CrystalToolkitSceneTexts
 } from '../sceneControlTexts';
 import { mergeTexts } from '../../../utils/text';
+import type { SceneExportFileNames } from '../sceneExport';
 import {
   createSceneLifecycle,
   useDismissiblePanel,
@@ -129,6 +130,11 @@ export interface CrystalToolkitSceneProps {
    */
   imageDataTimestamp?: any;
   /**
+   * THIS PROP IS SET AUTOMATICALLY
+   * Suggested filename for the generated PNG image.
+   */
+  imageFilename?: string;
+  /**
    * List of options to show in file download dropdown
    */
   fileOptions?: string[];
@@ -223,6 +229,15 @@ export interface CrystalToolkitSceneProps {
    * Override toolbar tooltip and export menu text.
    */
   texts?: Partial<CrystalToolkitSceneTexts>;
+  /**
+   * Prefix used for built-in visualization export filenames.
+   * Example: `demo` -> `demo_scene.glb`.
+   */
+  exportFilePrefix?: string;
+  /**
+   * Per-filetype filename override for built-in visualization exports.
+   */
+  exportFileNames?: SceneExportFileNames;
 }
 
 /**
@@ -306,6 +321,8 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
       settings: props.settings,
       inletSize: props.inletSize,
       inletPadding: props.inletPadding,
+      exportFilePrefix: props.exportFilePrefix,
+      exportFileNames: props.exportFileNames,
       mountNodeDebug: mountNodeDebugRef.current ?? undefined,
       onObjectClicked: props.onObjectClicked,
       onCameraChange: (position, quaternion, zoom) => {
@@ -340,6 +357,8 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
     axisView: props.axisView,
     sceneSize: props.sceneSize,
     imageRequest: props.imageRequest,
+    exportFilePrefix: props.exportFilePrefix,
+    exportFileNames: props.exportFileNames,
     setProps: props.setProps,
     animation: props.animation,
     bypassRenderingOnData: true,
@@ -399,6 +418,8 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
               tooltipId={tooltipId}
               texts={texts}
               fileOptions={props.fileOptions}
+              exportFilePrefix={props.exportFilePrefix}
+              exportFileNames={props.exportFileNames}
               showExpandButton={props.showExpandButton}
               showImageButton={props.showImageButton}
               showExportButton={props.showExportButton}

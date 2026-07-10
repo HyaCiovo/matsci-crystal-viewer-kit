@@ -29,6 +29,7 @@ import {
   useScenePanels,
   useSceneSharedEffects
 } from '../sceneComponentShared';
+import type { SceneExportFileNames } from '../sceneExport';
 import { requestSceneExport } from '../sceneExport';
 import { getSceneSize, hasRenderableSceneData, hideTooltip } from '../sceneComponentUtils';
 import { DEFAULT_CRYSTAL_TOOLKIT_SCENE_TEXTS } from '../sceneControlTexts';
@@ -133,6 +134,11 @@ export interface PhononAnimationSceneProps {
    */
   imageDataTimestamp?: any;
   /**
+   * THIS PROP IS SET AUTOMATICALLY
+   * Suggested filename for the generated PNG image.
+   */
+  imageFilename?: string;
+  /**
    * List of options to show in file download dropdown
    */
   fileOptions?: string[];
@@ -223,6 +229,15 @@ export interface PhononAnimationSceneProps {
    * @default true
    */
   showPositionButton?: boolean;
+  /**
+   * Prefix used for built-in visualization export filenames.
+   * Example: `demo` -> `demo_scene.glb`.
+   */
+  exportFilePrefix?: string;
+  /**
+   * Per-filetype filename override for built-in visualization exports.
+   */
+  exportFileNames?: SceneExportFileNames;
 }
 
 /**
@@ -301,6 +316,8 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
       settings: props.settings,
       inletSize: props.inletSize,
       inletPadding: props.inletPadding,
+      exportFilePrefix: props.exportFilePrefix,
+      exportFileNames: props.exportFileNames,
       mountNodeDebug: mountNodeDebugRef.current ?? undefined,
       onObjectClicked: props.onObjectClicked,
       onCameraChange: (position, quaternion, zoom) => {
@@ -337,6 +354,8 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
     axisView: props.axisView,
     sceneSize: props.sceneSize,
     imageRequest: props.imageRequest,
+    exportFilePrefix: props.exportFilePrefix,
+    exportFileNames: props.exportFileNames,
     setProps: props.setProps,
     animation: props.animation,
     bypassRenderingOnData: false
@@ -392,6 +411,8 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
               tooltipId={tooltipId}
               texts={DEFAULT_CRYSTAL_TOOLKIT_SCENE_TEXTS}
               fileOptions={props.fileOptions}
+              exportFilePrefix={props.exportFilePrefix}
+              exportFileNames={props.exportFileNames}
               showExpandButton={props.showExpandButton}
               showImageButton={props.showImageButton}
               showExportButton={props.showExportButton}

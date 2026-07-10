@@ -21,7 +21,11 @@ import { SceneJsonObject } from './scene/scene-types';
 import Scene from './scene/Scene';
 import { ScenePosition } from './scene/inset-helper';
 import { subscribe, type Subscription } from './scene/download-event';
-import { requestSceneExport, type SetProps } from './sceneExport';
+import {
+  requestSceneExport,
+  type SceneExportFileNames,
+  type SetProps
+} from './sceneExport';
 import { hasRenderableSceneData, type SceneDataLike } from './sceneComponentUtils';
 
 type CameraDispatchFn = (
@@ -40,6 +44,8 @@ type SceneLifecycleConfig = {
   settings?: any;
   inletSize?: number;
   inletPadding?: number;
+  exportFilePrefix?: string;
+  exportFileNames?: SceneExportFileNames;
   mountNodeDebug?: Element;
   onObjectClicked?: (objects: any) => void;
   onCameraChange: CameraDispatchFn;
@@ -57,7 +63,9 @@ type UseSceneSharedEffectsConfig = {
   inletPadding?: number;
   axisView?: string;
   sceneSize?: number | string;
-  imageRequest?: { filetype?: ExportType };
+  imageRequest?: { filetype?: ExportType; filename?: string };
+  exportFilePrefix?: string;
+  exportFileNames?: SceneExportFileNames;
   setProps: SetProps;
   animation?: string;
   bypassRenderingOnData: boolean;
@@ -90,6 +98,8 @@ export const createSceneLifecycle = ({
   settings,
   inletSize = 130,
   inletPadding = 0,
+  exportFilePrefix,
+  exportFileNames,
   mountNodeDebug,
   onObjectClicked,
   onCameraChange,
@@ -117,7 +127,9 @@ export const createSceneLifecycle = ({
     scene.animate();
   }
 
-  const subscription = subscribe(({ filetype }) => requestSceneExport(filetype, scene, setProps));
+  const subscription = subscribe(({ filetype, filename }) =>
+    requestSceneExport(filetype, scene, setProps, { exportFilePrefix, exportFileNames }, filename)
+  );
   return { scene, subscription };
 };
 
@@ -239,6 +251,8 @@ export const useSceneSharedEffects = ({
   axisView,
   sceneSize,
   imageRequest,
+  exportFilePrefix,
+  exportFileNames,
   setProps,
   animation,
   bypassRenderingOnData,
@@ -293,11 +307,17 @@ export const useSceneSharedEffects = ({
     if (!scene.current) {
       return;
     }
-    const { filetype } = imageRequest ?? {};
+    const { filetype, filename } = imageRequest ?? {};
     if (filetype) {
-      requestSceneExport(filetype, scene.current, setProps);
+      requestSceneExport(
+        filetype,
+        scene.current,
+        setProps,
+        { exportFilePrefix, exportFileNames },
+        filename
+      );
     }
-  }, [imageRequest, scene, setProps]);
+  }, [exportFileNames, exportFilePrefix, imageRequest, scene, setProps]);
 
   useEffect(() => {
     if (!scene.current || !animation) {
