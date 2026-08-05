@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.2 - 2026-08-05
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- feat(crystal-viewer): add adaptive orthographic camera projection for 4:3 embedded and fullscreen viewports
+
+
 ## 0.1.1 - 2026-06-24
 
 Package: `@gnosys/matsci-crystal-viewer-kit`
