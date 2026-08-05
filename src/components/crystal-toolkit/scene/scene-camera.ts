@@ -79,3 +79,31 @@ export function createOrthographicCamera(length: number, defaultZoom: number) {
     length + Z_PADDING
   );
 }
+
+/**
+ * Reframes an orthographic camera for its actual renderer aspect ratio without
+ * changing the current zoom or stretching the rendered structure.
+ *
+ * The viewer's original camera frame is square. When the host is wider than
+ * tall, expose the additional horizontal space; when it is narrower, expose
+ * additional vertical space so the structure remains fully visible.
+ */
+export function applyOrthographicCameraAspect(
+  camera: THREE.OrthographicCamera,
+  baseHalfExtent: number,
+  aspect: number
+) {
+  if (!Number.isFinite(aspect) || aspect <= 0 || !Number.isFinite(baseHalfExtent)) {
+    return;
+  }
+
+  const safeAspect = Math.max(aspect, Number.EPSILON);
+  const halfHeight = baseHalfExtent * Math.max(1, 1 / safeAspect);
+  const halfWidth = halfHeight * safeAspect;
+
+  camera.left = -halfWidth;
+  camera.right = halfWidth;
+  camera.top = halfHeight;
+  camera.bottom = -halfHeight;
+  camera.updateProjectionMatrix();
+}
