@@ -32,6 +32,7 @@ import { buildSceneGraph } from './scene-graph';
 import {
   applyOrthographicCameraFrame,
   calculateCameraFrame,
+  applyOrthographicCameraAspect,
   createOrthographicCamera
 } from './scene-camera';
 import {
@@ -66,6 +67,7 @@ export default class Scene {
   public scene!: THREE.Scene; // expose getter instead
   private cachedMountNodeSize!: SceneSize;
   private camera!: THREE.OrthographicCamera;
+  private cameraBaseHalfExtent = 100;
   private cameraState?: CameraState;
   private frameId?: number;
   private controls: SceneControls | null = null;
@@ -410,6 +412,17 @@ export default class Scene {
     this.mainViewportConfigured = true;
   }
 
+  private syncCameraAspect(size: SceneSize) {
+    if (size.width <= 0 || size.height <= 0) {
+      return;
+    }
+    applyOrthographicCameraAspect(
+      this.camera,
+      this.cameraBaseHalfExtent,
+      size.width / size.height
+    );
+  }
+
   public resizeRendererToDisplaySize() {
     if (this.destroyed || !this.renderer?.domElement || !this.labelRenderer?.domElement) {
       return;
@@ -421,6 +434,7 @@ export default class Scene {
     }
     this.syncLabelRendererLayout(size);
     this.syncSvgRendererSize(size);
+    this.syncCameraAspect(size);
     const cssSizeChanged = canvas.clientWidth !== size.width || canvas.clientHeight !== size.height;
     const pixelRatio = this.renderer instanceof WebGLRenderer ? this.renderer.getPixelRatio() : 1;
     const bufferWidth = Math.round(size.width * pixelRatio);
@@ -540,6 +554,7 @@ export default class Scene {
 
   private setupCamera(rootObject: THREE.Object3D) {
     const { length } = calculateCameraFrame(rootObject, this.settings);
+    this.cameraBaseHalfExtent = length / this.settings.defaultZoom;
 
     if (this.camera) {
       applyOrthographicCameraFrame(this.camera, this.scene, length, this.settings);
