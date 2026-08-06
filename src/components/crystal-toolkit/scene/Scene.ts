@@ -382,7 +382,9 @@ export default class Scene {
     if (this.axis) {
       this.inset.updateViewportsize(inletSize, inletPadding);
     }
-    this.renderInlet();
+    // A hidden inset must still redraw the main viewport to clear the pixels
+    // written by the previous inset render.
+    this.renderScene();
   }
 
   private syncMountSizeFromRendererParent() {
