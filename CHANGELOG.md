@@ -2,6 +2,26 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.3 - 2026-08-06
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- fix(Scene): 修复隐藏轴 inset 时未重绘主视口的问题
+- release: bump version to 0.1.2 and update changelog
+- feat(crystal-toolkit): 实现正交相机自适应渲染宽高比的功能
+- feat(crystal-toolkit): 新增场景导出的自定义文件名支持
+- docs(readme): 完善README，添加英文文档、包使用说明与贡献指南
+- docs: 整理项目文档，删除旧文档并更新主README与示例说明
+- chore(config): 移除.npmrc配置文件并将其加入gitignore
+- feat: 新增Storybook演示环境，完善项目文档与优化组件样式
+- chore(crystal-viewer-kit): 发布v0.1.1版本
+- feat(晶体可视化套件): 发布v0.1.0版本，完善核心功能与文档
+- 修复(crystal-viewer): 解决全屏弹窗、场景重挂载问题并调整样式
+- fix(crystal-viewer): 修复全屏弹窗与场景重挂载问题，调整面板与工具栏样式
+- chore: 发布v0.0.3版本并更新变更日志
+- feat: 初始化晶体结构查看器套件并发布v0.0.2
+
+
 ## 0.1.2 - 2026-08-05
 
 Package: `@gnosys/matsci-crystal-viewer-kit`
