@@ -219,6 +219,7 @@ export default class Scene {
       staticScene: this.settings.staticScene,
       animation: this.settings.animation as AnimationStyle,
       dispatchCamera: this.dispatch,
+      flushCamera: this.flushCameraDispatch,
       renderScene: () => this.renderScene(),
       startAnimationLoop: () => this.start()
     });
@@ -328,6 +329,7 @@ export default class Scene {
     padding: number,
     clickCallback: (objects: SceneJsonLike[]) => void,
     private dispatch: (p: Vector3, r: Quaternion, zoom: number) => void,
+    private flushCameraDispatch?: () => void,
     private debugDOMElement?: Element,
     cameraState?: CameraState
   ) {

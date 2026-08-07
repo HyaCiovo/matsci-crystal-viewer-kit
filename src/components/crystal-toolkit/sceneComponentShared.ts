@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { CameraContext } from './CameraContextProvider';
 import {
   cameraReducer,
+  CameraActionPayload,
   CameraReducerAction,
   CameraState,
   initialState
@@ -49,6 +50,7 @@ type SceneLifecycleConfig = {
   mountNodeDebug?: Element;
   onObjectClicked?: (objects: any) => void;
   onCameraChange: CameraDispatchFn;
+  onCameraChangeEnd?: () => void;
   setProps: SetProps;
   removeListeners?: boolean;
   animateOnMount?: boolean;
@@ -73,6 +75,7 @@ type UseSceneSharedEffectsConfig = {
 };
 
 let sceneComponentId = 0;
+const CAMERA_STATE_UPDATE_INTERVAL_MS = 50;
 
 const nextSceneComponentId = () => (++sceneComponentId).toString();
 
@@ -103,6 +106,7 @@ export const createSceneLifecycle = ({
   mountNodeDebug,
   onObjectClicked,
   onCameraChange,
+  onCameraChangeEnd,
   setProps,
   removeListeners = false,
   animateOnMount = false
@@ -117,6 +121,7 @@ export const createSceneLifecycle = ({
       onObjectClicked?.(objects);
     },
     onCameraChange,
+    onCameraChangeEnd,
     mountNodeDebug ?? undefined
   );
 
@@ -179,6 +184,63 @@ export const useSceneCameraSync = ({
   const cameraDispatch = cameraContext ? cameraContext.dispatch : cameraReducerDispatch;
   const componentIdRef = useRef(nextSceneComponentId());
   const originalCameraStateRef = useRef<CameraState | null>(null);
+  const pendingCameraStateRef = useRef<CameraActionPayload | null>(null);
+  const cameraUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCameraUpdateTimeRef = useRef(0);
+
+  const flushCameraUpdate = useCallback(() => {
+    cameraUpdateTimerRef.current = null;
+    const payload = pendingCameraStateRef.current;
+    if (!payload) {
+      return;
+    }
+
+    pendingCameraStateRef.current = null;
+    lastCameraUpdateTimeRef.current = performance.now();
+    cameraDispatch?.({
+      type: CameraReducerAction.NEW_POSITION,
+      payload,
+    });
+  }, [cameraDispatch]);
+
+  const queueCameraUpdate = useCallback(
+    (position: THREE.Vector3, quaternion: THREE.Quaternion, zoom: number) => {
+      // Controls emit a change event for nearly every pointer movement. Keep the
+      // mutable Three.js values in refs and publish a coalesced immutable snapshot.
+      pendingCameraStateRef.current = {
+        componentId: componentIdRef.current,
+        position: position.clone(),
+        quaternion: quaternion.clone(),
+        zoom,
+      };
+
+      if (cameraUpdateTimerRef.current != null) {
+        return;
+      }
+
+      const elapsed = performance.now() - lastCameraUpdateTimeRef.current;
+      const delay = Math.max(0, CAMERA_STATE_UPDATE_INTERVAL_MS - elapsed);
+      cameraUpdateTimerRef.current = setTimeout(flushCameraUpdate, delay);
+    },
+    [flushCameraUpdate],
+  );
+
+  const flushQueuedCameraUpdate = useCallback(() => {
+    if (cameraUpdateTimerRef.current != null) {
+      clearTimeout(cameraUpdateTimerRef.current);
+      cameraUpdateTimerRef.current = null;
+    }
+    flushCameraUpdate();
+  }, [flushCameraUpdate]);
+
+  useEffect(
+    () => () => {
+      if (cameraUpdateTimerRef.current != null) {
+        clearTimeout(cameraUpdateTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!cameraState) {
@@ -236,6 +298,8 @@ export const useSceneCameraSync = ({
   return {
     cameraDispatch,
     componentIdRef,
+    flushQueuedCameraUpdate,
+    queueCameraUpdate,
     resetCamera
   };
 };

@@ -117,7 +117,7 @@ export const RangeSlider = ({
     onChangeRef.current = onChange;
   }, [setProps, onChange]);
 
-  const lastReportedValue = useRef<number>();
+  const lastReportedValue = useRef<number | undefined>(undefined);
 
   const emitChange = (nextSliderValue: number) => {
     const rounded = Number(nextSliderValue.toFixed(decimals));

@@ -21,6 +21,7 @@ type CreateSceneControlsControllerArgs = {
   staticScene: boolean;
   animation: AnimationStyle;
   dispatchCamera: (position: THREE.Vector3, quaternion: THREE.Quaternion, zoom: number) => void;
+  flushCamera?: () => void;
   renderScene: () => void;
   startAnimationLoop: () => void;
 };
@@ -55,6 +56,7 @@ export function createSceneControlsController({
   staticScene,
   animation,
   dispatchCamera,
+  flushCamera,
   renderScene,
   startAnimationLoop
 }: CreateSceneControlsControllerArgs): SceneControlsController {
@@ -79,6 +81,7 @@ export function createSceneControlsController({
     });
     controls.addEventListener('end', () => {
       controls.update();
+      flushCamera?.();
       if (isTrackball) {
         document.removeEventListener('mousemove', mouseTrackballUpdate, false);
       }

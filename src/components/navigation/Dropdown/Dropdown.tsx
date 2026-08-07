@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { Children, cloneElement, isValidElement, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { Children, cloneElement, isValidElement, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 export interface DropdownProps {
@@ -133,9 +133,12 @@ export const Dropdown = ({
               }
 
               if (isValidElement(item)) {
-                const originalOnClick = (item.props as { onClick?: (event: MouseEvent<HTMLElement>) => void }).onClick;
-                return cloneElement(item, {
-                  key: item.key ?? index,
+                const dropdownItem = item as ReactElement<{
+                  onClick?: (event: MouseEvent<HTMLElement>) => void;
+                }>;
+                const originalOnClick = dropdownItem.props.onClick;
+                return cloneElement(dropdownItem, {
+                  key: dropdownItem.key ?? index,
                   onClick: (event: MouseEvent<HTMLElement>) => {
                     originalOnClick?.(event);
                     handleItemSelection(event);

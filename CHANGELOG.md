@@ -2,6 +2,14 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.4 - 2026-08-07
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- Fix stale atom highlight when moving directly between atoms
+- Coalesce camera state updates during interaction and skip duplicate updates
+
+
 ## 0.1.3 - 2026-08-06
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

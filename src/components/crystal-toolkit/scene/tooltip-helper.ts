@@ -68,6 +68,21 @@ export function createTooltipController(): TooltipController {
 
   moveTooltipOffscreen(tooltip);
 
+  const clearActiveTooltip = () => {
+    if (!state.tooltipedThreeObject) {
+      return false;
+    }
+
+    if (typeof state.tooltipedJsonObject?.color === 'string') {
+      updateHighlightedMeshes(state.tooltipedThreeObject, state.tooltipedJsonObject.color, false);
+    }
+
+    state.tooltipedThreeObject = null;
+    state.tooltipedJsonObject = null;
+    moveTooltipOffscreen(tooltip);
+    return true;
+  };
+
   return {
     tooltip,
     updateTooltip(point, jsonObject, sceneObject) {
@@ -77,7 +92,10 @@ export function createTooltipController(): TooltipController {
         return;
       }
 
-      if (state.tooltipedJsonObject !== jsonObject) {
+      const isCurrentObject =
+        state.tooltipedJsonObject === jsonObject && state.tooltipedThreeObject === sceneObject;
+      if (!isCurrentObject) {
+        clearActiveTooltip();
         if (typeof jsonObject.color === 'string') {
           updateHighlightedMeshes(sceneObject, jsonObject.color, true);
         }
@@ -88,18 +106,7 @@ export function createTooltipController(): TooltipController {
       tooltip.element.textContent = tooltipText;
     },
     hideTooltipIfNeeded() {
-      if (!state.tooltipedThreeObject) {
-        return false;
-      }
-
-      if (typeof state.tooltipedJsonObject?.color === 'string') {
-        updateHighlightedMeshes(state.tooltipedThreeObject, state.tooltipedJsonObject.color, false);
-      }
-
-      state.tooltipedThreeObject = null;
-      state.tooltipedJsonObject = null;
-      moveTooltipOffscreen(tooltip);
-      return true;
+      return clearActiveTooltip();
     }
   };
 }

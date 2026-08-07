@@ -15,7 +15,7 @@ import {
   MOUNT_NODE_CLASS,
   MOUNT_NODE_STYLE
 } from '../scene/constants';
-import { CameraReducerAction, CameraState } from '../CameraContextProvider/camera-reducer';
+import { CameraState } from '../CameraContextProvider/camera-reducer';
 import useResizeObserver from 'use-resize-observer';
 import { Enlargeable } from '../../data-display/Enlargeable';
 import clsx from 'clsx';
@@ -271,14 +271,14 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
    * mount nodes, those are passed in the template and are populated when
    * the component is mounted
    */
-  const mountNodeRef = useRef(null);
+  const mountNodeRef = useRef<HTMLDivElement>(null);
 
   /**
    * Wrap mountNodeRef in a resize observer so that the scene
    * can resize properly even when the window size doesn't change
    */
   useResizeObserver<HTMLDivElement>({
-    ref: mountNodeRef,
+    ref: mountNodeRef as React.RefObject<HTMLDivElement>,
     onResize: () => {
       if (scene.current) {
         scene.current.resizeRendererToDisplaySize();
@@ -294,7 +294,7 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
   const { settingsPanel, bottomPanel, hasSettingsPanel, hasBottomPanel } = useScenePanels(
     props.children
   );
-  const { cameraDispatch, componentIdRef, resetCamera } = useSceneCameraSync({
+  const { flushQueuedCameraUpdate, queueCameraUpdate, resetCamera } = useSceneCameraSync({
     scene,
     setProps: props.setProps,
     customCameraState: props.customCameraState
@@ -320,17 +320,8 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
       exportFileNames: props.exportFileNames,
       mountNodeDebug: mountNodeDebugRef.current ?? undefined,
       onObjectClicked: props.onObjectClicked,
-      onCameraChange: (position, quaternion, zoom) => {
-        cameraDispatch?.({
-          type: CameraReducerAction.NEW_POSITION,
-          payload: {
-            componentId: componentIdRef.current,
-            position,
-            quaternion,
-            zoom
-          }
-        });
-      },
+      onCameraChange: queueCameraUpdate,
+      onCameraChangeEnd: flushQueuedCameraUpdate,
       setProps: props.setProps,
       removeListeners: true,
       animateOnMount: props.data !== undefined && props.data !== null

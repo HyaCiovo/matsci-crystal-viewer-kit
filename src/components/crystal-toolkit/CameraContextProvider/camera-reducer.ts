@@ -31,12 +31,41 @@ export const initialState: CameraState = {
   following: true,
 };
 
+function hasSameVector(
+  current?: Vector3,
+  next?: Vector3,
+): boolean {
+  return current === next || Boolean(current && next && current.equals(next));
+}
+
+function hasSameQuaternion(
+  current?: Quaternion,
+  next?: Quaternion,
+): boolean {
+  return current === next || Boolean(current && next && current.equals(next));
+}
+
+function hasSameCameraPosition(
+  state: CameraState,
+  payload: CameraActionPayload,
+): boolean {
+  return (
+    state.setByComponentId === payload.componentId &&
+    state.zoom === payload.zoom &&
+    hasSameVector(state.position, payload.position) &&
+    hasSameQuaternion(state.quaternion, payload.quaternion)
+  );
+}
+
 export function cameraReducer(
   state: CameraState,
   { type, payload }: Action<CameraReducerAction, CameraActionPayload>
 ): CameraState {
   switch (type) {
     case CameraReducerAction.NEW_POSITION:
+      if (hasSameCameraPosition(state, payload)) {
+        return state;
+      }
       return {
         quaternion: payload.quaternion?.clone(),
         position: payload.position?.clone(),
