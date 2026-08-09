@@ -106,6 +106,7 @@ export class ThreeBuilder {
   private headGeometryCache = new Map<string, THREE.ConeGeometry>();
   private cubeGeometryCache = new Map<string, THREE.BoxGeometry>();
   private materialCache = new Map<string, MaterialCacheEntry>();
+  private labelCount = 0;
 
   constructor(private settings: BuilderSettings) {}
 
@@ -668,6 +669,15 @@ export class ThreeBuilder {
   }
 
   public makeLabel(object_json: SceneJsonLike, obj: THREE.Object3D) {
+    const maxLabelCount =
+      typeof this.settings.maxLabelCount === 'number' && this.settings.maxLabelCount >= 0
+        ? this.settings.maxLabelCount
+        : 250;
+    if (this.labelCount >= maxLabelCount) {
+      return obj;
+    }
+
+    this.labelCount += 1;
     const label = document.createElement('div');
     label.className = 'tooltip';
     label.textContent = object_json.label;
@@ -680,6 +690,32 @@ export class ThreeBuilder {
     const labelObject = new CSS2DObject(label);
     obj.add(labelObject);
     return obj;
+  }
+
+  public resetLabelCount() {
+    this.labelCount = 0;
+  }
+
+  public dispose() {
+    const geometries = new Set<THREE.BufferGeometry>([
+      ...this.sphereGeometryCache.values(),
+      ...this.cylinderGeometryCache.values(),
+      ...this.headGeometryCache.values(),
+      ...this.cubeGeometryCache.values()
+    ]);
+    geometries.forEach((geometry) => geometry.dispose());
+
+    const materials = new Set<THREE.Material>(
+      [...this.materialCache.values()].map((entry) => entry.material)
+    );
+    materials.forEach((material) => material.dispose());
+
+    this.sphereGeometryCache.clear();
+    this.cylinderGeometryCache.clear();
+    this.headGeometryCache.clear();
+    this.cubeGeometryCache.clear();
+    this.materialCache.clear();
+    this.labelCount = 0;
   }
 
   public makeEllipsoids(object_json: SceneJsonLike, obj: THREE.Object3D) {

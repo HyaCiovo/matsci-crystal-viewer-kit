@@ -9,6 +9,7 @@ import Scene from '../scene/Scene';
 const sceneApi = vi.hoisted(() => ({
   attachToMountNode: vi.fn(),
   resizeRendererToDisplaySize: vi.fn(),
+  scheduleRendererResize: vi.fn(),
   renderScene: vi.fn(),
   enableDebug: vi.fn(),
   addToScene: vi.fn(),

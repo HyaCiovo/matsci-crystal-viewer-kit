@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.5 - 2026-08-09
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- 新增性能基准页面和多轮对照测试数据
+
+
 ## 0.1.4 - 2026-08-07
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

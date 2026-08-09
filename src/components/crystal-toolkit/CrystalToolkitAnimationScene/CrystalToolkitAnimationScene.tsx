@@ -287,7 +287,7 @@ export const CrystalToolkitAnimationScene: React.FC<CrystalToolkitAnimationScene
     ref: mountNodeRef as React.RefObject<HTMLDivElement>,
     onResize: () => {
       if (scene.current) {
-        scene.current.resizeRendererToDisplaySize();
+        scene.current.scheduleRendererResize();
       }
     }
   });
@@ -295,6 +295,8 @@ export const CrystalToolkitAnimationScene: React.FC<CrystalToolkitAnimationScene
   const mountNodeDebugRef = useRef(null);
   // we use a ref to keep a reference to the underlying scene
   const scene = useRef<Scene | null>(null);
+  const onObjectClickedRef = useRef(props.onObjectClicked);
+  onObjectClickedRef.current = props.onObjectClicked;
   const sceneSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
@@ -327,7 +329,7 @@ export const CrystalToolkitAnimationScene: React.FC<CrystalToolkitAnimationScene
       exportFilePrefix: props.exportFilePrefix,
       exportFileNames: props.exportFileNames,
       mountNodeDebug: mountNodeDebugRef.current ?? undefined,
-      onObjectClicked: props.onObjectClicked,
+      onObjectClicked: (objects) => onObjectClickedRef.current?.(objects),
       onCameraChange: queueCameraUpdate,
       onCameraChangeEnd: flushQueuedCameraUpdate,
       setProps: props.setProps,
@@ -373,7 +375,6 @@ export const CrystalToolkitAnimationScene: React.FC<CrystalToolkitAnimationScene
         return;
       }
       scene.current.attachToMountNode?.(mountNode);
-      scene.current.resizeRendererToDisplaySize();
       scene.current.renderScene();
     };
 

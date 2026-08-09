@@ -364,7 +364,7 @@ export const useSceneSharedEffects = ({
     if (!scene.current) {
       return;
     }
-    scene.current.resizeRendererToDisplaySize();
+    scene.current.scheduleRendererResize();
   }, [scene, sceneSize]);
 
   useEffect(() => {

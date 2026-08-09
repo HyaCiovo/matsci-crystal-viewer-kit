@@ -50,7 +50,11 @@ const updateHighlightedMeshes = (
 
 export interface TooltipController {
   readonly tooltip: CSS2DObject;
-  updateTooltip(point: THREE.Vector3, jsonObject: TooltipJson, sceneObject: THREE.Object3D): void;
+  updateTooltip(
+    point: THREE.Vector3,
+    jsonObject: TooltipJson,
+    sceneObject: THREE.Object3D
+  ): boolean;
   hideTooltipIfNeeded(): boolean;
 }
 
@@ -88,8 +92,7 @@ export function createTooltipController(): TooltipController {
     updateTooltip(point, jsonObject, sceneObject) {
       const tooltipText = getTooltipText(jsonObject.tooltip);
       if (!tooltipText) {
-        this.hideTooltipIfNeeded();
-        return;
+        return this.hideTooltipIfNeeded();
       }
 
       const isCurrentObject =
@@ -104,6 +107,7 @@ export function createTooltipController(): TooltipController {
       }
       tooltip.position.copy(point);
       tooltip.element.textContent = tooltipText;
+      return true;
     },
     hideTooltipIfNeeded() {
       return clearActiveTooltip();

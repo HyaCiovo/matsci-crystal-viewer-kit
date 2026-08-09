@@ -81,6 +81,8 @@ export interface CrystalToolkitSceneProps {
    *    renderer: 'webgl', // 'svg' also an option, used for unit testing
    *    transparentBackground: false, // transparent background
    *    background: '#ffffff', // background color if not transparent,
+   *    maxPixelRatio: 2, // cap device pixel ratio to limit framebuffer cost
+   *    maxLabelCount: 250, // cap CSS2D labels; set 0 to disable labels
    *    sphereSegments: 32, // decrease to improve performance
    *    cylinderSegments: 16, // decrease to improve performance
    *    staticScene: true, // disable if animation required
@@ -285,7 +287,7 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
     ref: mountNodeRef as React.RefObject<HTMLDivElement>,
     onResize: () => {
       if (scene.current) {
-        scene.current.resizeRendererToDisplaySize();
+        scene.current.scheduleRendererResize();
       }
     }
   });
@@ -293,6 +295,8 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
   const mountNodeDebugRef = useRef(null);
   // we use a ref to keep a reference to the underlying scene
   const scene = useRef<Scene | null>(null);
+  const onObjectClickedRef = useRef(props.onObjectClicked);
+  onObjectClickedRef.current = props.onObjectClicked;
   const [expanded, setExpanded] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const { settingsPanel, bottomPanel, hasSettingsPanel, hasBottomPanel } = useScenePanels(
@@ -324,7 +328,7 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
       exportFilePrefix: props.exportFilePrefix,
       exportFileNames: props.exportFileNames,
       mountNodeDebug: mountNodeDebugRef.current ?? undefined,
-      onObjectClicked: props.onObjectClicked,
+      onObjectClicked: (objects) => onObjectClickedRef.current?.(objects),
       onCameraChange: queueCameraUpdate,
       onCameraChangeEnd: flushQueuedCameraUpdate,
       setProps: props.setProps
@@ -357,8 +361,7 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
       props.inletSize,
       props.inletPadding,
       props.axisView,
-      props.settings,
-      props.onObjectClicked
+      props.settings
     ]
   });
 
@@ -373,7 +376,6 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
         return;
       }
       scene.current.attachToMountNode?.(mountNode);
-      scene.current.resizeRendererToDisplaySize();
       scene.current.renderScene();
     };
 

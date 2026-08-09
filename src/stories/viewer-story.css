@@ -129,8 +129,127 @@
   line-height: 1.7;
 }
 
+.mcv-benchmark-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.65fr);
+  gap: 18px;
+}
+
+.mcv-benchmark-controls {
+  padding: 20px 22px 22px;
+}
+
+.mcv-benchmark-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.mcv-benchmark-actions button,
+.mcv-benchmark-run {
+  border: 1px solid #b9cbe3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173761;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 8px 10px;
+}
+
+.mcv-benchmark-actions button:hover,
+.mcv-benchmark-actions button:focus-visible {
+  border-color: #5d8fbe;
+  background: #edf5ff;
+  outline: none;
+}
+
+.mcv-benchmark-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 18px;
+  color: #42566f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mcv-benchmark-toggle input {
+  margin: 3px 0 0;
+}
+
+.mcv-benchmark-run {
+  width: 100%;
+  margin-top: 18px;
+  border-color: #275d93;
+  background: #275d93;
+  color: #ffffff;
+}
+
+.mcv-benchmark-run:hover,
+.mcv-benchmark-run:focus-visible {
+  background: #1e4a76;
+  outline: 2px solid #a7c7e8;
+  outline-offset: 2px;
+}
+
+.mcv-benchmark-note {
+  margin: 14px 0 0;
+  color: #5b6b80;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mcv-benchmark-viewer .mcv-story-card-body {
+  height: min(68vh, 720px);
+  min-height: 440px;
+  padding: 0;
+}
+
+.mcv-benchmark-mount {
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+}
+
+.mcv-benchmark-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 20px 0 0;
+  border-top: 1px solid #e0e8f2;
+  border-left: 1px solid #e0e8f2;
+}
+
+.mcv-benchmark-results > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-right: 1px solid #e0e8f2;
+  border-bottom: 1px solid #e0e8f2;
+}
+
+.mcv-benchmark-results dt {
+  color: #65758b;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.mcv-benchmark-results dd {
+  margin: 3px 0 0;
+  color: #1f3655;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 @media (max-width: 1200px) {
   .mcv-story-surface > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mcv-benchmark-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 }

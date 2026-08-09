@@ -91,12 +91,14 @@ export default class Scene {
 
   private threeUUIDTojsonObject: Record<string, SceneJsonLike> = {};
   private computeIdToThree: { [id: string]: THREE.Object3D } = {};
+  private objectNameIndex = new Map<string, THREE.Object3D>();
 
   // handle multiSelection via shift key
   private isMultiSelectionEnabled = false;
   private animationHelper: AnimationController;
   private outlineDirty = false;
   private mainViewportConfigured = false;
+  private resizeFrameId?: number;
 
   private cacheMountBBox(mountNode: Element) {
     this.cachedMountNodeSize = { width: mountNode.clientWidth, height: mountNode.clientHeight };
@@ -118,7 +120,12 @@ export default class Scene {
           alpha: this.settings.transparentBackground
         });
         renderer.autoClear = false;
-        renderer.setPixelRatio(window.devicePixelRatio);
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const maxPixelRatio =
+          typeof this.settings.maxPixelRatio === 'number' && this.settings.maxPixelRatio > 0
+            ? this.settings.maxPixelRatio
+            : 2;
+        renderer.setPixelRatio(Math.min(devicePixelRatio, maxPixelRatio));
         (renderer as any).gammaFactor = 2.2;
         renderer.setClearColor(0xfffff, 0.0);
         return renderer;
@@ -169,6 +176,7 @@ export default class Scene {
   private initializeSceneCore() {
     this.scene = getSceneWithBackground(this.settings);
     this.objectRegistry.reset();
+    this.objectNameIndex.clear();
     this.camera = new THREE.OrthographicCamera(100, 100, 100, 100, 100);
     this.scene.add(this.objectBuilder.makeLights(this.settings.lights as any));
     this.scene.add(this.tooltipHelper.tooltip);
@@ -180,10 +188,12 @@ export default class Scene {
       tooltipController: this.tooltipHelper,
       renderer: this.renderer,
       domElement: this.renderer.domElement as HTMLElement,
-      clickableObjects: this.objectRegistry.getClickableObjects(),
-      tooltipObjects: this.objectRegistry.getTooltipObjects(),
+      getClickableObjects: () => this.objectRegistry.getClickableObjects(),
+      getInteractiveObjects: () => this.objectRegistry.getInteractiveObjects(),
       getClickedReference: (clientX, clientY, objectsToCheck) =>
         this.hitTester.getClickedReference(clientX, clientY, objectsToCheck),
+      getIntersectedReferences: (clientX, clientY, objectsToCheck) =>
+        this.hitTester.getIntersectedReferences(clientX, clientY, objectsToCheck),
       renderScene: () => this.renderScene(),
       onClickReference: (reference, event) => this.onClickImplementation(reference, event)
     });
@@ -230,6 +240,10 @@ export default class Scene {
     return this.renderer;
   }
 
+  public getHoverPickingPasses() {
+    return this.interactionController?.getHoverPickingPasses() ?? 0;
+  }
+
   public attachToMountNode(mountNode: Element) {
     if (this.destroyed || !this.renderer?.domElement || !this.labelRenderer?.domElement) {
       return;
@@ -244,7 +258,7 @@ export default class Scene {
 
     this.cacheMountBBox(mountNode);
     this.mainViewportConfigured = false;
-    this.resizeRendererToDisplaySize();
+    this.scheduleRendererResize();
   }
 
   public updateCamera(position: Vector3, rotation?: Quaternion, zoom?: number) {
@@ -319,7 +333,7 @@ export default class Scene {
     }
   }
 
-  private readonly windowListener = () => this.resizeRendererToDisplaySize();
+  private readonly windowListener = () => this.scheduleRendererResize();
 
   constructor(
     sceneJson: SceneJsonLike,
@@ -410,10 +424,14 @@ export default class Scene {
 
   private syncMainViewport(renderer: WebGLRenderer, size: SceneSize) {
     renderer.setSize(size.width, size.height);
+    this.restoreMainViewport(renderer, size);
+    this.mainViewportConfigured = true;
+  }
+
+  private restoreMainViewport(renderer: WebGLRenderer, size: SceneSize) {
     renderer.setScissorTest(true);
     renderer.setScissor(0, 0, size.width, size.height);
     renderer.setViewport(0, 0, size.width, size.height);
-    this.mainViewportConfigured = true;
   }
 
   private syncCameraAspect(size: SceneSize) {
@@ -453,14 +471,35 @@ export default class Scene {
     }
   }
 
+  public scheduleRendererResize() {
+    if (this.destroyed || this.resizeFrameId !== undefined) {
+      return;
+    }
+
+    this.resizeFrameId = requestAnimationFrame(() => {
+      this.resizeFrameId = undefined;
+      this.resizeRendererToDisplaySize();
+    });
+  }
+
   private resetSceneStateForReplacement(sceneName: string) {
     this.animationHelper.reset();
     this.objectRegistry.reset();
+    this.objectBuilder.resetLabelCount();
     this.threeUUIDTojsonObject = {};
     this.computeIdToThree = {};
     const outlinedObjectIds = this.selectionController.prepareForSceneReplacement();
     this.removeObjectByName(sceneName);
     return outlinedObjectIds;
+  }
+
+  private rebuildObjectNameIndex() {
+    this.objectNameIndex.clear();
+    this.scene.traverse((object) => {
+      if (object.name && !this.objectNameIndex.has(object.name)) {
+        this.objectNameIndex.set(object.name, object);
+      }
+    });
   }
 
   private restorePreviousSelection(outlinedObjectIds: string[]) {
@@ -546,6 +585,7 @@ export default class Scene {
     // can cause memory leak
     //console.log('rootObject', rootObject, rootObject);
     this.scene.add(rootObject);
+    this.rebuildObjectNameIndex();
     this.setupCamera(rootObject);
     this.restorePreviousSelection(outlinedObject);
     this.renderBackgroundSnapshotIfNeeded();
@@ -646,7 +686,7 @@ export default class Scene {
     }
     if (this.renderer instanceof WebGLRenderer) {
       this.inset.render(this.renderer, this.getInletOrigin(this.inletPosition));
-      this.syncMainViewport(this.renderer, this.getCachedMountBBox());
+      this.restoreMainViewport(this.renderer, this.getCachedMountBBox());
     }
   }
 
@@ -660,7 +700,7 @@ export default class Scene {
     }
 
     Object.keys(namesToVisibility).forEach((objName) => {
-      const obj = this.scene.getObjectByName(objName);
+      const obj = this.objectNameIndex.get(objName);
       if (obj) {
         obj.visible = Boolean(namesToVisibility[objName]);
       }
@@ -704,6 +744,13 @@ export default class Scene {
     }
   }
 
+  private clearPendingResize() {
+    if (this.resizeFrameId !== undefined) {
+      cancelAnimationFrame(this.resizeFrameId);
+      this.resizeFrameId = undefined;
+    }
+  }
+
   private destroyDebugHelper() {
     this.debugHelper?.onDestroy();
     this.debugHelper = null;
@@ -713,6 +760,7 @@ export default class Scene {
     this.destroyDebugHelper();
     this.inset?.onDestroy();
     this.selectionController.destroy();
+    this.interactionController?.dispose();
     this.interactionController = null;
     this.controlsController?.dispose();
     this.controlsController = null;
@@ -742,12 +790,15 @@ export default class Scene {
     }
     this.destroyed = true;
     this.clearPendingControlInit();
+    this.clearPendingResize();
     this.computeIdToThree = {};
     this.threeUUIDTojsonObject = {};
+    this.objectNameIndex.clear();
     this.stop();
     this.removeEventListeners();
     this.destroyControllers();
     disposeSceneHierarchy(this.scene);
+    this.objectBuilder.dispose();
     this.removeDomRenderers();
     this.disposeRendererResources();
   }
@@ -756,9 +807,14 @@ export default class Scene {
     if (this.destroyed || !this.scene) {
       return;
     }
-    // name is not necessarily unique, make this recursive ?
-    const object = this.scene.getObjectByName(name);
-    typeof object !== 'undefined' && this.scene.remove(object);
+    const object = this.objectNameIndex.get(name) ?? this.scene.getObjectByName(name);
+    if (!object) {
+      return;
+    }
+
+    this.scene.remove(object);
+    disposeSceneHierarchy(object);
+    this.rebuildObjectNameIndex();
   }
 
   private getHelper() {

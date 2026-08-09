@@ -281,7 +281,7 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
     ref: mountNodeRef as React.RefObject<HTMLDivElement>,
     onResize: () => {
       if (scene.current) {
-        scene.current.resizeRendererToDisplaySize();
+        scene.current.scheduleRendererResize();
       }
     }
   });
@@ -289,6 +289,8 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
   const mountNodeDebugRef = useRef(null);
   // we use a ref to keep a reference to the underlying scene
   const scene = useRef<Scene | null>(null);
+  const onObjectClickedRef = useRef(props.onObjectClicked);
+  onObjectClickedRef.current = props.onObjectClicked;
   const [expanded, setExpanded] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const { settingsPanel, bottomPanel, hasSettingsPanel, hasBottomPanel } = useScenePanels(
@@ -319,7 +321,7 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
       exportFilePrefix: props.exportFilePrefix,
       exportFileNames: props.exportFileNames,
       mountNodeDebug: mountNodeDebugRef.current ?? undefined,
-      onObjectClicked: props.onObjectClicked,
+      onObjectClicked: (objects) => onObjectClickedRef.current?.(objects),
       onCameraChange: queueCameraUpdate,
       onCameraChangeEnd: flushQueuedCameraUpdate,
       setProps: props.setProps,
@@ -363,7 +365,6 @@ export const PhononAnimationScene: React.FC<PhononAnimationSceneProps> = ({
         return;
       }
       scene.current.attachToMountNode?.(mountNode);
-      scene.current.resizeRendererToDisplaySize();
       scene.current.renderScene();
     };
 

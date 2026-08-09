@@ -48,11 +48,11 @@ function disposeNode(node: THREE.Object3D) {
   }
 } // disposeNode
 
-export function disposeSceneHierarchy(scene: THREE.Object3D) {
-  scene.children.forEach((childNode) => {
+export function disposeSceneHierarchy(root: THREE.Object3D) {
+  root.children.forEach((childNode) => {
     disposeSceneHierarchy(childNode);
-    disposeNode(childNode);
   });
+  disposeNode(root);
 }
 
 // this will give the x/y coordinate in the normalized device coordinates, whose center is (0,0) and w-h is 2

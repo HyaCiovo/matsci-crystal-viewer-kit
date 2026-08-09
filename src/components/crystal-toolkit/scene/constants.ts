@@ -58,6 +58,8 @@ export const defaults = {
   renderer: Renderer.WEBGL,
   renderDivBackground: false,
   background: '#ffffff',
+  maxPixelRatio: 2,
+  maxLabelCount: 250,
   sphereSegments: 32,
   cylinderSegments: 16,
   staticScene: true,
