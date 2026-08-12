@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.6 - 2026-08-10
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- 批量渲染与交互性能优化；完善场景资源生命周期释放和多轮性能基准报告
+
+
 ## 0.1.5 - 2026-08-09
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

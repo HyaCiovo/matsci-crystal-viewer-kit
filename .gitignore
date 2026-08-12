@@ -9,4 +9,6 @@ node_modules
 dist
 .npm-cache
 .npmrc
-docs/
+docs/*
+!docs/
+!docs/matsci-crystal-viewer-kit-technical-specification.md

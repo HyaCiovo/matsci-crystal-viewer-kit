@@ -61,7 +61,9 @@ type MaterialCacheEntry = {
 type InstancedSphereObject = THREE.Object3D & {
   userData: {
     instancedSphere?: boolean;
+    interactiveInstancedSphere?: boolean;
     baseRadius?: number;
+    baseColor?: string;
     spherePositions?: ThreePosition[];
     [key: string]: unknown;
   };
@@ -143,8 +145,6 @@ export class ThreeBuilder {
   private shouldUseInstancedSpheres(objectJson: SceneJsonLike) {
     return Boolean(
       !objectJson.animate &&
-        !objectJson.clickable &&
-        !objectJson.tooltip &&
         !objectJson.hoverLabel &&
         Array.isArray(objectJson.positions) &&
         objectJson.positions.length > 1
@@ -161,17 +161,52 @@ export class ThreeBuilder {
     radius: number
   ) {
     const matrix = new THREE.Matrix4();
+    const positionVector = new THREE.Vector3();
     const scaleVector = new THREE.Vector3(radius, radius, radius);
     const quaternion = new THREE.Quaternion();
 
     positions.forEach((position, index) => {
-      matrix.compose(new THREE.Vector3(...position), quaternion, scaleVector);
+      positionVector.set(...position);
+      matrix.compose(positionVector, quaternion, scaleVector);
       mesh.setMatrixAt(index, matrix);
     });
 
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingBox();
     mesh.computeBoundingSphere();
+  }
+
+  private initializeInstancedSphereColors(
+    mesh: InstancedMesh,
+    color: string,
+    count: number
+  ) {
+    const material = mesh.material as THREE.Material & { vertexColors?: boolean };
+    material.vertexColors = true;
+    material.needsUpdate = true;
+    const instanceColor = new THREE.Color(color);
+    for (let index = 0; index < count; index += 1) {
+      mesh.setColorAt(index, instanceColor);
+    }
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
+  public updateInstancedSphereInstanceColor(
+    obj: THREE.Object3D,
+    index: number,
+    color: string
+  ) {
+    const mesh = this.getInstancedSphereMesh(obj);
+    if (!mesh || !Number.isInteger(index) || index < 0 || index >= mesh.count) {
+      return;
+    }
+
+    mesh.setColorAt(index, new THREE.Color(color));
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   private updateObjectColor(object: THREE.Object3D, color: string) {
@@ -631,12 +666,6 @@ export class ThreeBuilder {
 
   public makeSphere(object_json: SceneJsonLike, obj: THREE.Object3D) {
     const sphereRadius = object_json.radius * this.settings.sphereScale;
-    const { geom, mat } = this.getSphereBuffer(
-      sphereRadius,
-      object_json.color,
-      object_json.phiStart,
-      object_json.phiEnd
-    );
 
     if (this.shouldUseInstancedSpheres(object_json)) {
       const unitGeometry = this.getSphereGeometry(
@@ -646,13 +675,22 @@ export class ThreeBuilder {
       );
       const instancedMesh = new THREE.InstancedMesh(
         unitGeometry,
-        this.makeMaterial(object_json.color, object_json.animate, 1.0, { shared: true }),
+        this.makeMaterial('#ffffff', object_json.animate, 1.0, { shared: true }),
         object_json.positions.length
       );
       instancedMesh.name = `${object_json.type || 'sphere'}-instances`;
       this.updateInstancedSphereMatrices(instancedMesh, object_json.positions, sphereRadius);
+      this.initializeInstancedSphereColors(
+        instancedMesh,
+        object_json.color,
+        object_json.positions.length
+      );
       (obj as InstancedSphereObject).userData.instancedSphere = true;
+      (obj as InstancedSphereObject).userData.interactiveInstancedSphere = Boolean(
+        object_json.clickable || object_json.tooltip
+      );
       (obj as InstancedSphereObject).userData.baseRadius = sphereRadius;
+      (obj as InstancedSphereObject).userData.baseColor = object_json.color;
       (obj as InstancedSphereObject).userData.spherePositions = object_json.positions.map(
         (position: ThreePosition) => [...position] as ThreePosition
       );
@@ -660,6 +698,12 @@ export class ThreeBuilder {
       return obj;
     }
 
+    const { geom, mat } = this.getSphereBuffer(
+      sphereRadius,
+      object_json.color,
+      object_json.phiStart,
+      object_json.phiEnd
+    );
     this.addPositionedMeshes(obj, object_json.positions, (position) => {
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(...position);
@@ -883,12 +927,14 @@ export class ThreeBuilder {
     if ((obj as InstancedSphereObject).userData.instancedSphere) {
       const mesh = this.getInstancedSphereMesh(obj);
       if (mesh) {
-        const material = mesh.material as THREE.Material;
-        const nextMaterial = this.createMaterialVariant(material, newColor);
-        mesh.material = nextMaterial;
-        if (!isSharedThreeResource(material)) {
-          material.dispose();
+        const instanceColor = new THREE.Color(newColor);
+        for (let index = 0; index < mesh.count; index += 1) {
+          mesh.setColorAt(index, instanceColor);
         }
+        if (mesh.instanceColor) {
+          mesh.instanceColor.needsUpdate = true;
+        }
+        (obj as InstancedSphereObject).userData.baseColor = newColor;
       }
       return;
     }

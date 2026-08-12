@@ -12,7 +12,10 @@ type CreateSceneHitTesterArgs<T> = {
   raycaster: THREE.Raycaster;
   getCamera: () => THREE.Camera | undefined;
   getViewportSize: () => HitTestSize;
-  resolveParentObject: (object: Object3D) => { sceneObject: Object3D; jsonObject: T } | null;
+  resolveParentObject: (
+    object: Object3D,
+    instanceId?: number
+  ) => { sceneObject: Object3D; jsonObject: T; instanceId?: number } | null;
 };
 
 export interface SceneHitTester<T> {
@@ -34,6 +37,9 @@ export function createSceneHitTester<T>({
   getViewportSize,
   resolveParentObject
 }: CreateSceneHitTesterArgs<T>): SceneHitTester<T> {
+  const viewportVector = new THREE.Vector2();
+  const pointerVector = new THREE.Vector2();
+
   return {
     getIntersectedReferences(clientX, clientY, objectsToCheck) {
       const camera = getCamera();
@@ -42,8 +48,9 @@ export function createSceneHitTester<T>({
       }
 
       const viewportSize = getViewportSize();
-      const size = new THREE.Vector2(viewportSize.width, viewportSize.height);
-      raycaster.setFromCamera(getThreeScreenCoordinate(size, clientX, clientY), camera);
+      viewportVector.set(viewportSize.width, viewportSize.height);
+      pointerVector.copy(getThreeScreenCoordinate(viewportVector, clientX, clientY));
+      raycaster.setFromCamera(pointerVector, camera);
       const intersects = raycaster.intersectObjects(objectsToCheck, true);
 
       if (intersects.length === 0) {
@@ -59,7 +66,7 @@ export function createSceneHitTester<T>({
 
         return {
           point,
-          object: resolveParentObject(intersection.object)
+          object: resolveParentObject(intersection.object, intersection.instanceId)
         };
       });
     },

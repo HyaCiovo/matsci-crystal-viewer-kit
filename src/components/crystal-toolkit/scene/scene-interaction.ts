@@ -7,7 +7,7 @@ export const POINTER_CLASS = 'show-pointer';
 export type SceneInteractionReference<T> =
   | {
       point: Vector3;
-      object: { sceneObject: Object3D; jsonObject: T } | null;
+      object: { sceneObject: Object3D; jsonObject: T; instanceId?: number } | null;
     }
   | null
   | undefined;
@@ -96,7 +96,8 @@ export function createSceneInteractionController<T>({
         ? tooltipController.updateTooltip(
             tooltipReference.point,
             tooltipReference.object.jsonObject as Record<string, any>,
-            tooltipReference.object.sceneObject
+            tooltipReference.object.sceneObject,
+            tooltipReference.object.instanceId
           )
         : tooltipController.hideTooltipIfNeeded();
 

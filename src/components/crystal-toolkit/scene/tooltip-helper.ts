@@ -10,9 +10,11 @@ type TooltipJson = {
 type TooltipState = {
   tooltipedJsonObject: TooltipJson | null;
   tooltipedThreeObject: THREE.Object3D | null;
+  tooltipedInstanceId: number | undefined;
 };
 
 const OFFSCREEN_COORDINATE = Number.MAX_SAFE_INTEGER;
+const scratchHighlightColor = new THREE.Color();
 
 const getTooltipText = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
 
@@ -38,10 +40,19 @@ const setMeshColor = (mesh: THREE.Mesh, colorValue: string) => {
 const updateHighlightedMeshes = (
   sceneObject: THREE.Object3D,
   color: string,
-  brighten = false
+  brighten = false,
+  instanceId?: number
 ) => {
   const resolvedColor = brighten ? rgb(color).brighter(1).formatHex() : color;
   sceneObject.children.forEach((child) => {
+    if (child instanceof THREE.InstancedMesh && instanceId !== undefined) {
+      scratchHighlightColor.set(resolvedColor);
+      child.setColorAt(instanceId, scratchHighlightColor);
+      if (child.instanceColor) {
+        child.instanceColor.needsUpdate = true;
+      }
+      return;
+    }
     if (child instanceof THREE.Mesh) {
       setMeshColor(child, resolvedColor);
     }
@@ -53,7 +64,8 @@ export interface TooltipController {
   updateTooltip(
     point: THREE.Vector3,
     jsonObject: TooltipJson,
-    sceneObject: THREE.Object3D
+    sceneObject: THREE.Object3D,
+    instanceId?: number
   ): boolean;
   hideTooltipIfNeeded(): boolean;
 }
@@ -67,7 +79,8 @@ export function createTooltipController(): TooltipController {
   const tooltip = new CSS2DObject(label);
   const state: TooltipState = {
     tooltipedJsonObject: null,
-    tooltipedThreeObject: null
+    tooltipedThreeObject: null,
+    tooltipedInstanceId: undefined
   };
 
   moveTooltipOffscreen(tooltip);
@@ -78,32 +91,41 @@ export function createTooltipController(): TooltipController {
     }
 
     if (typeof state.tooltipedJsonObject?.color === 'string') {
-      updateHighlightedMeshes(state.tooltipedThreeObject, state.tooltipedJsonObject.color, false);
+      updateHighlightedMeshes(
+        state.tooltipedThreeObject,
+        state.tooltipedJsonObject.color,
+        false,
+        state.tooltipedInstanceId
+      );
     }
 
     state.tooltipedThreeObject = null;
     state.tooltipedJsonObject = null;
+    state.tooltipedInstanceId = undefined;
     moveTooltipOffscreen(tooltip);
     return true;
   };
 
   return {
     tooltip,
-    updateTooltip(point, jsonObject, sceneObject) {
+    updateTooltip(point, jsonObject, sceneObject, instanceId) {
       const tooltipText = getTooltipText(jsonObject.tooltip);
       if (!tooltipText) {
         return this.hideTooltipIfNeeded();
       }
 
       const isCurrentObject =
-        state.tooltipedJsonObject === jsonObject && state.tooltipedThreeObject === sceneObject;
+        state.tooltipedJsonObject === jsonObject &&
+        state.tooltipedThreeObject === sceneObject &&
+        state.tooltipedInstanceId === instanceId;
       if (!isCurrentObject) {
         clearActiveTooltip();
         if (typeof jsonObject.color === 'string') {
-          updateHighlightedMeshes(sceneObject, jsonObject.color, true);
+          updateHighlightedMeshes(sceneObject, jsonObject.color, true, instanceId);
         }
         state.tooltipedJsonObject = jsonObject;
         state.tooltipedThreeObject = sceneObject;
+        state.tooltipedInstanceId = instanceId;
       }
       tooltip.position.copy(point);
       tooltip.element.textContent = tooltipText;

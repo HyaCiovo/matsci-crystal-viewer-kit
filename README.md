@@ -10,16 +10,12 @@ If this project is useful to you, welcome to star the repository and open pull r
 
 ## Package Availability
 
-This package is currently not published to the public npm registry. It is only used inside our team's private registry and internal projects for now.
+This package is published to our team's private npm registry for internal projects. The current published version is `0.1.6`.
 
-If you want to use it outside our internal environment, you need to build and pack it locally first, then consume the generated tarball in your own project.
-
-Typical local packaging flow:
+Typical package installation flow:
 
 ```bash
-pnpm install
-pnpm build
-pnpm pack
+pnpm add @gnosys/matsci-crystal-viewer-kit@0.1.6 --save-exact
 ```
 
 它不是一个“页面级应用组件集合”，而是一个专注于晶体结构可视化的底层能力包。你可以把它理解为：
@@ -50,10 +46,12 @@ pnpm pack
 15. [宿主集成建议](#宿主集成建议)
 16. [开发命令](#开发命令)
 17. [发布](#发布)
+18. [创新点与性能基准](#创新点与性能基准)
+
 
 ## 项目定位
 
-`matsci-crystal-viewer-kit` 从 `matsci-ui` 中抽离出来，目标非常明确：
+`matsci-crystal-viewer-kit` 从 `matsci-ui（mp-react-components）` 中抽离出来，目标非常明确：
 
 - 接收宿主传入的 `Scene JSON`
 - 在 React 中创建和维护一个可交互的 Three.js 场景
@@ -527,6 +525,162 @@ flowchart TD
 - [fixtures](./src/components/crystal-toolkit/fixtures)
 
 这样运行时代码不再依赖大 fixture 文件，打包边界更干净，也为后续 tree shaking 和 bundle 分析提供了更清晰的结构。
+
+## 创新点与性能基准
+
+本节只记录已经进入当前主路径的实现和本次最新自动基准结果。性能数据来自当前机器、当前浏览器和固定测试参数，不应直接外推为所有设备的固定性能承诺。
+
+### 创新点
+
+1. **交互实例化渲染**：统一球体对象中的原子优先使用 `InstancedMesh`；raycast 通过 `instanceId` 映射到原子数据，因此批量渲染不会牺牲点击和 tooltip 的单原子精度。
+2. **实例级悬浮高亮**：通过 `instanceColor` 只修改当前命中的原子，移出时恢复该实例颜色，不会造成整组原子同时变色，也不需要为每个原子复制材质。
+3. **单帧单次 hover 拾取**：连续 `mousemove` 事件通过 `requestAnimationFrame` 合并，同一帧只保留最新坐标并执行一次 raycast，同时复用结果处理 tooltip、cursor 和重绘。
+4. **共享资源与生命周期分离**：区分场景对象资源和 builder 共享缓存，场景替换释放非共享资源，viewer 销毁时统一释放缓存，避免重复替换导致几何体计数持续增长。
+5. **高频路径低分配**：复用 raycast 的屏幕向量、指针向量和高亮颜色对象，减少鼠标移动过程中的临时 Three.js 对象和 GC 压力。
+6. **更新边界控制**：对象可见性通过索引增量更新，resize 和指针事件通过 rAF 收敛，React 回调使用稳定引用，减少无关 props 变化造成的完整场景重建。
+
+### 参考实现与当前实现对照总表
+
+参考对象为 `matsci-ui` 中的 MP 衍生晶体预览实现。下表只说明本组件库实际新增或收敛的工程能力；没有把参考组件已经具备的晶体结构表达、Three.js 基础渲染和交互能力重复包装成创新。
+
+| 能力维度 | 参考实现的基础形态 | 本组件库的实现与收益 | 展示/行为兼容性 |
+| --- | --- | --- | --- |
+| 组件边界 | 预览能力与业务页面组织在一起 | 抽取为独立 React 组件、场景管理器和配置入口，可被材料库、详情页、对话和工作流复用 | 保留原有 scene JSON 展示模型 |
+| 场景更新 | 数据、回调和展示设置容易共同进入更新路径 | 拆分场景拓扑、对象索引、可见性、回调和展示参数；只有影响拓扑或几何的变化才重建 | 结构内容、主题、相机和控制项不变 |
+| 大规模原子 | 批量原子可能按普通 Mesh 展开 | 同形状静态球体批量使用一个 `InstancedMesh`，复用 geometry/material；当前基准 1,000/5,000/10,000 原子均为 1 draw call、1 geometry | 位置、半径、颜色、光照和结构布局不变 |
+| 逐原子交互 | 批处理后容易丢失原子级命中上下文 | 通过 `intersection.instanceId` 建立实例索引到 JSON 对象的映射 | 点击、tooltip、cursor 和单原子选择保持可用 |
+| hover 高亮 | 可能修改整批对象或复制材质 | 使用 `instanceColor` 只更新当前实例，并保存/恢复实例基础颜色 | 不再出现整组原子被变色，视觉语义更精确 |
+| 高频指针 | burst `mousemove` 可能重复 raycast 和状态处理 | 使用 rAF 保留最新指针位置，同一帧最多一次 hover raycast；本次 240 事件观测到 1 次实际拾取 | 不改变最终指针位置和命中结果 |
+| 高频临时对象 | 命中测试过程可能反复创建向量 | 复用 `Vector2` 等 scratch 对象，降低分配和 GC 压力 | 命中坐标、tooltip 位置和相交判断不变 |
+| 几何/材质资源 | 场景替换和共享缓存的所有权边界不够清晰 | 场景资源、共享 builder 缓存和 viewer 销毁分别管理；替换释放非共享资源，最终销毁释放缓存 | 保留结构切换、动画和导出能力 |
+| 生命周期验证 | 仅靠页面观感难以发现资源累积 | 增加 30 轮 × 30 次替换的自动观测，并记录 geometry、texture 和三段 JS Heap | 不影响运行时展示 |
+| resize | 多入口 resize 可能在同一帧重复执行 | ResizeObserver、窗口变化和容器变化统一到 rAF，同一帧最多一次真实 resize | 保留自适应尺寸、比例和 viewport |
+| 高 DPI | 设备 DPR 可能直接放大画布成本 | 提供 `maxPixelRatio`，由应用按场景配置 DPR 上限 | 通过配置在清晰度和 GPU 压力间取平衡 |
+| 标签与 DOM | 大量 CSS2D 标签会增加布局和内存压力 | `maxLabelCount` 控制标签预算，默认限制显式标签数量 | 标签功能保留，密集结构按预算展示 |
+| 全屏/放大 | 全屏切换可能重建 Scene | 保留 Scene，改为重绑挂载节点、同步尺寸并重绘 | 视角和结构状态不因放大切换丢失 |
+| 轮廓高亮 | 可能每帧刷新 outline | 使用 dirty-driven 更新，只在 selection/可见性/场景变化时刷新 | 选中轮廓视觉效果保留 |
+| React 集成 | 三维异常容易影响外围页面 | 应用侧使用 lazy、Suspense、局部 ErrorBoundary 和查询缓存 | 三维失败时其他业务区域可继续工作 |
+| 性能证据 | 缺少统一可导出的重复测试协议 | Storybook 提供 30 轮自动基准、JSON/Markdown 导出和固定采样参数 | 不改变业务 API |
+
+#### 渲染、资源与图形管线增量
+
+| 能力维度 | 旧实现的处理方式 | 新实现的处理方式 | 直接优势 | 量化/验证状态 |
+| --- | --- | --- | --- | --- |
+| 球体几何缓存 | `getSphereGeometry()` 每次生成新几何体，场景内重复参数不能跨对象复用 | 按半径、球面起止角和分段数建立缓存键，缓存 geometry 并标记共享所有权 | 降低重复几何构建和 GPU geometry 数量 | 新版 1,000/5,000/10,000 静态原子均为 1 geometry；旧版同协议待补测 |
+| 圆柱/箭头/立方体缓存 | 圆柱、箭头头部和立方体几何体缺少集中缓存 | 分别使用 cylinder/head/cube cache，按真实几何参数复用 | 键、箭头和立方体密集场景减少构建分配 | 源码已确认；旧版量化待补测 |
+| 材质缓存 | `makeMaterial()` 每次直接创建材质 | 按 renderer、材质类型、参数、颜色和透明度建立缓存；需要独立变体时 clone | 共享材质与变体材质边界清晰，减少材质对象数量 | 源码已确认；旧版量化待补测 |
+| 静态原子批处理 | 每个位置创建一个普通 Mesh | 满足静态、同形状且无 hoverLabel 条件时使用 InstancedMesh；复杂对象安全回退 | 大规模原子由逐对象提交变为实例批次 | 新版当前基准 1 个 draw call；旧版逐 Mesh 数待补测 |
+| 实例颜色 | 普通 Mesh 直接改材质，批处理后没有单实例颜色路径 | 使用 `instanceColor` 保存基础颜色并更新单个 instance | 保留单原子颜色和 hover 语义，避免整批变色/材质复制 | 交互功能回归已覆盖；FPS/内存百分比待 A/B |
+| 键/线定位计算 | 每个位置对重复向量、方向和四元数的创建分散在构建路径 | 统一 `getSegmentPlacement()` 返回 midpoint、direction、quaternion、length、end | 减少重复几何定位逻辑，更新和初次构建共用同一规则 | 源码已确认；旧版量化待补测 |
+| 虚线 | 创建 LineDashedMaterial 后没有统一的样式解析边界 | 统一颜色、宽度、scale、dashSize、gapSize，并在需要时调用 `computeLineDistances()` | 虚线视觉正确，更新时不必走完整场景重建 | 展示回归已覆盖；耗时待补测 |
+| 透明表面 | 透明属性散落在 surface/convex 构建路径 | 统一设置 `transparent` 和 `depthWrite=false` | 降低透明面深度遮挡造成的错误重绘，保持表面叠加效果 | 展示回归已覆盖；GPU 指标待补测 |
+| 参数更新 | 半径、边缘或线材质更新可能直接替换而不统一处理旧资源 | 统一 geometry replacement 和 material dispose，跳过共享资源释放 | 防止参数拖动造成旧几何/材质残留 | 场景替换资源计数稳定；旧版同协议待补测 |
+| DPR | 直接使用设备 DPR，4K/高密度屏幕会线性放大 framebuffer | `maxPixelRatio` 默认上限 2，宿主可配置 | 控制 GPU 像素填充成本，同时保留清晰度调节 | 当前基准 DPR=1；不同 DPR 对照待补测 |
+| CSS2D 标签 | 标签数量完全由输入决定 | `maxLabelCount` 默认 250，0 可关闭 | 限制 DOM、布局和文本节点内存预算 | 配置/功能已确认；标签密集 A/B 待补测 |
+
+#### 更新、交互与生命周期增量
+
+| 能力维度 | 旧实现的处理方式 | 新实现的处理方式 | 直接优势 | 量化/验证状态 |
+| --- | --- | --- | --- | --- |
+| hover 事件 | `mousemove` 直接执行 raycast、tooltip 和重绘 | 最新坐标写入 ref，rAF 每帧最多一次拾取 | 事件 burst 不再按事件数放大 CPU 工作 | 新版 240 事件实际拾取中位数 1；旧版待同协议补测 |
+| 命中临时对象 | Scene 命中路径内分散创建屏幕/指针向量 | `scene-hit-test` 复用 Vector2 scratch 对象 | 降低高频分配和 GC 抖动 | 源码已确认；分配量待 profiler A/B |
+| 交互候选集合 | clickable 和 tooltip 路径分别命中，容易重复拾取 | registry 同时维护 clickable、tooltip 和去重后的 interactive 集合 | 一次 raycast 结果同时服务 tooltip、cursor 和交互判断 | 新版 240 事件 1 次拾取；旧版待补测 |
+| 对象查找 | 可见性操作依赖完整场景树查找 | `objectNameIndex` Map 建立名称到 Object3D 的索引 | 显示开关从遍历转为索引访问 | 功能回归已确认；切换耗时待补测 |
+| selection 与 visibility | 隐藏对象可能保留 selection/outline | 隐藏后调用 `removeInvisibleSelections()` 并标记 outline dirty | selection、outline、inset 与可见状态一致 | 功能回归已确认 |
+| outline | 选择后刷新路径较频繁 | `outlineDirty` 只在 selection、场景替换和可见性变化时刷新 | 静态场景减少后处理构造和重复绘制 | 当前静态基准帧间隔见报告；旧版待补测 |
+| resize | window resize 和容器 resize 都可能立即执行真实 resize | ResizeObserver/window/挂载变化统一进 rAF，pending frame 可取消 | 连续尺寸变化每帧最多一次真实 resize | 代码路径已确认；次数 A/B 待补测 |
+| viewport/scissor | inset 绘制后的 WebGL 状态恢复边界分散 | 主 viewport/scissor 有缓存状态，inset 后显式恢复 | 避免辅助视图影响主视图后续绘制 | 多视图功能回归已确认 |
+| 全屏/放大 | 放大路径容易重新初始化 viewer | `attachToMountNode()` 只重挂载 canvas/CSS2D，保留 Scene、renderer、controls | 减少重建、闪烁、状态丢失和资源瞬时峰值 | 功能回归已确认；重建次数 A/B 待补测 |
+| 相机同步 | controls 的每次 change 更容易立即触发 React dispatch | ref 保存瞬时值，50ms 窗口合并不可见的中间状态 | 降低 React 全局状态更新和父树重渲染 | 交互回归已确认；dispatch 次数 A/B 待补测 |
+| 生命周期销毁 | 逻辑集中，pending 事件/动画/DOM/renderer 释放边界较粗 | 统一取消 rAF/timer、移除监听、销毁 controls/inset/debug、释放场景和 renderer | 降低路由切换、反复打开和场景替换的残留风险 | 900 次替换 geometry 峰值/最终值 1/1；旧版待同协议补测 |
+| 共享资源所有权 | 场景资源与可复用资源可能混用 | `markSharedThreeResource`/`isSharedThreeResource` 区分所有权 | 避免共享资源被提前 dispose，也避免最终销毁漏释放 | 源码已确认；正式 heap snapshot 待补测 |
+
+#### 架构、展示与交付增量
+
+| 能力维度 | 旧实现的处理方式 | 新实现的处理方式 | 直接优势 | 量化/验证状态 |
+| --- | --- | --- | --- | --- |
+| Scene 结构 | Scene.ts 和多个 React scene 组件各自包含大量生命周期、交互和导出逻辑 | 拆分 camera、controls、graph、registry、hit-test、interaction、selection、tooltip、export | 单一热点可独立优化，减少重复逻辑和回归面 | 源码/模块边界已确认；不直接等同于运行时加速 |
+| React 生命周期 | 静态、动画、声子组件重复维护初始化、resize、camera sync | `createSceneLifecycle()`、`useSceneSharedEffects()`、`useSceneCameraSync()` 共享路径 | 统一销毁和更新语义，减少三份实现漂移 | 三类组件 typecheck/test 已通过 |
+| 回调稳定性 | props callback 变化可能影响 effect 依赖和重建 | `onObjectClickedRef` 持有最新回调，不作为初始化 effect 的重建条件 | 业务回调更新不重建 WebGL runtime | 源码已确认 |
+| 动画回退 | 所有对象难以同时满足实例化和逐对象动画 | 静态可批处理，animate/hoverLabel/异构对象走普通 Mesh | 在保留动画、标签和复杂语义的前提下使用优化路径 | 动画功能回归已确认 |
+| 导出 | PNG/GLTF/GLB/USDZ 逻辑分散在各 React 组件 | `sceneExport` 统一文件命名、导出分发和宿主 setProps | 导出行为一致，底层 runtime 与 UI 解耦 | 导出回归已覆盖 |
+| 场景/fixture 边界 | 示例 scene 数据与运行时代码边界较近 | scene types、demo fixtures 和运行时模块分离 | 更清晰的 tree-shaking、打包和维护边界 | 构建产物已验证 |
+| 包交付 | 应用源码和组件能力混合消费 | `exports` 明确入口、style.css、peerDependencies 和独立 dist | 避免重复 React/Three，便于版本化消费和升级 | npm 0.1.6 发布并被宿主安装 |
+| 性能证据 | 主要靠人工观感和单次测量 | Storybook 多场景 30 轮、CLI 自动落 JSON/Markdown 并同步文档 | 每次优化可重复、可审计、可回归 | 当前报告 30 轮完成 |
+
+其中“源码/功能差异已确认”说明新实现确实存在对应代码路径；“百分比待 A/B”表示尚未在相同机器和协议下运行旧实现，不能据此写成性能提升比例。当前新实现的实际数据见下方自动报告。
+
+### 已实现优化方案
+
+| 优化方向 | 当前实现 | 不改变的展示/交互能力 |
+| --- | --- | --- |
+| 重复原子渲染 | 同形状球体使用 `InstancedMesh` 和共享 geometry/material | 原子位置、半径、颜色和光照效果 |
+| 交互批处理 | `intersection.instanceId` 映射原子索引 | 点击、tooltip、cursor 和单原子高亮 |
+| 材质内存 | 实例颜色替代逐原子材质克隆 | 元素颜色和悬浮反馈 |
+| 高频输入 | rAF 合帧、单帧单次 raycast | 指针响应和命中精度 |
+| 命中测试 | 复用 `Vector2`，减少临时对象 | 命中坐标和 tooltip 定位 |
+| 场景替换 | 递归释放非共享 geometry/material/texture | 结构切换和相机行为 |
+| 画布 resize | ResizeObserver + rAF 合并 | 尺寸自适应和视口比例 |
+| 高分辨率 | `maxPixelRatio` 限制 | 视觉清晰度与可配置 DPR |
+| 复杂对象兼容 | 动画、hoverLabel、异构语义回退普通 Mesh | 原有复杂场景行为 |
+| 图元资源复用 | sphere/cylinder/head/cube geometry cache 与 material cache | 降低重复构建和 GPU 资源数量 |
+| 复杂图元正确性 | 虚线距离、透明深度写入、surface normals、convex edge 独立处理 | 保留复杂结构的视觉正确性 |
+| 更新资源安全 | geometry/material 替换前按共享标记释放旧资源 | 降低半径、线型和多面体更新造成的残留 |
+| 对象索引 | object name Map + clickable/tooltip/interactive registry | 可见性切换和拾取减少全场景遍历 |
+| 辅助视图状态 | 主 viewport/scissor 缓存并在 inset 后恢复 | 轴视图不污染主视图渲染状态 |
+| 相机和回调 | camera change 50ms 合并、最新回调 ref | 降低父级 React 更新，不丢最终视角 |
+| 全屏 runtime | attachToMountNode 重挂载而非重建 | 保留视角和资源，减少放大闪烁 |
+| 结构化导出 | sceneExport 统一 PNG/GLTF/GLB/USDZ 和命名 | 保持导出能力，减少组件重复代码 |
+
+### 多轮性能基准测试
+
+基准入口是 Storybook 的 `Many Round Protocol`。运行一次会自动执行：
+
+- 1,000、5,000、10,000 原子静态场景；
+- 1,000 原子 clickable + tooltip 交互场景；
+- 240 次连续 `mousemove` 的 hover 压测；
+- 30 轮、每轮 30 次同名场景替换的生命周期测试；
+- 构建耗时、帧间隔中位数/P95/P99、draw calls、geometry、texture、三角形和 JS Heap 快照。
+
+测试协议固定为每轮 5 帧预热、8 个双帧间隔样本，销毁后额外读取即时值、3 秒值、6 秒值和压力缓冲释放稳定值；所有结果自动计算平均值、中位数、P95、P99、标准差、最小值和最大值。页面支持导出原始 JSON 和 Markdown，命令行也可以自动运行并落盘：`pnpm benchmark:many-round`。结果写入 `benchmark-results/latest.json` 和 `benchmark-results/latest.md`，并同步更新本 README 与组件库内的技术说明。
+
+<!-- BENCHMARK_RESULTS_START -->
+### 最新 30 轮性能结果（新实现）
+
+本表为当前组件库在本机、Headless Chrome、固定 scene JSON 和当前采样协议下的实测结果，格式为“30 轮中位数 / P95”。旧实现尚未使用相同协议复测，因此不能从本表直接推导旧版百分比。
+
+#### 旧实现与新实现的实测对照
+
+| 场景 | 旧实现构建耗时 | 新实现构建耗时 | 旧实现 draw calls/geometry | 新实现 draw calls/geometry | 结论 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 1,000 原子静态 | 待同协议补测 | 22.60 / 53.40 ms | 待同协议补测 | 1.00 / 1.00 | 新实现已确认走实例批处理；性能百分比待 A/B |
+| 5,000 原子静态 | 待同协议补测 | 21.50 / 34.50 ms | 待同协议补测 | 1.00 / 1.00 | 新实现保持单实例批次；性能百分比待 A/B |
+| 10,000 原子静态 | 待同协议补测 | 24.60 / 72.30 ms | 待同协议补测 | 1.00 / 1.00 | 原子数量增长不增加球体批次；性能百分比待 A/B |
+| 1,000 原子交互 | 待同协议补测 | 31.40 / 57.20 ms | 待同协议补测 | 1.00 / 1.00 | 240 次指针事件合并为 1.00 次 hover raycast |
+
+| 场景 | 构建耗时 | 帧间隔中位数 | 帧间隔 P95 | draw calls | geometry |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1,000 原子静态 | 22.60 / 53.40 | 8.25 / 8.35 | 8.60 / 8.80 | 1.00 | 1.00 |
+| 5,000 原子静态 | 21.50 / 34.50 | 8.30 / 8.35 | 8.70 / 8.80 | 1.00 | 1.00 |
+| 10,000 原子静态 | 24.60 / 72.30 | 8.30 / 8.35 | 8.70 / 8.75 | 1.00 | 1.00 |
+| 1,000 原子交互 | 31.40 / 57.20 | 8.25 / 8.35 | 8.70 / 8.80 | 1.00 | 1.00 |
+
+240 个连续指针事件在本次基准中合并为 1.00 次实际 hover raycast。该结果反映当前合帧协议，不代表所有设备和所有输入序列都固定为该数值。
+
+### 最新 JS Heap 与生命周期资源结果
+
+浏览器 `performance.memory.usedJSHeapSize` 只是 JS Heap 快照，单位为 MiB；它不是系统 RAM，也不是 GPU VRAM。当前协议包含销毁后一帧、3 秒、6 秒和压力缓冲释放稳定值，并计算 6 秒相对构建差值。稳定值是观察延迟 GC 的证据，不是强制 GC 或正式 Heap Snapshot。
+
+| 场景 | 构建后 | 销毁后一帧 | 销毁 3 秒后 | 销毁 6 秒后 | 压力释放稳定后 | 6 秒相对构建差值 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 原子静态 | 78.2 / 79.9 MiB | 55.3 / 63.3 MiB | 55.3 / 63.3 MiB | 55.3 / 63.4 MiB | 78.2 / 79.9 MiB | -22.7 / 0.5 MiB |
+| 5,000 原子静态 | 79.3 / 79.3 MiB | 56.9 / 64.9 MiB | 56.9 / 64.9 MiB | 56.9 / 64.9 MiB | 79.3 / 79.3 MiB | -22.6 / -6.7 MiB |
+| 10,000 原子静态 | 80.2 / 80.3 MiB | 58.2 / 66.2 MiB | 58.2 / 66.2 MiB | 58.2 / 66.2 MiB | 80.2 / 80.3 MiB | -22.9 / 0.6 MiB |
+| 1,000 原子交互 | 78.9 / 79.0 MiB | 56.0 / 63.9 MiB | 56.0 / 63.9 MiB | 56.0 / 64.0 MiB | 78.9 / 78.9 MiB | -15.7 / 0.6 MiB |
+
+生命周期测试为 30 轮 × 30 次同名场景替换，共 900 次替换；geometry 峰值/最终值为 1.00 / 1.00，texture 峰值/最终值为 0.00 / 0.00。6 秒稳定 Heap 首轮/末轮/总差值/每轮斜率为 52.1 / 52.7 / 0.6 / 0.0 MiB。该结果支持“Three.js 可观测资源计数没有随替换线性增长”，但 JS Heap 仍需结合正式 Heap Snapshot 判断具体对象是否可回收。
+
+<!-- BENCHMARK_RESULTS_END -->
 
 ## 交互与展示能力
 

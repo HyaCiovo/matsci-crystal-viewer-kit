@@ -244,6 +244,117 @@
   font-weight: 700;
 }
 
+.mcv-many-benchmark-panel {
+  padding: 22px;
+}
+
+.mcv-many-benchmark-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.mcv-many-benchmark-toolbar strong {
+  display: block;
+  color: #0b1f44;
+  font-size: 16px;
+}
+
+.mcv-many-benchmark-toolbar span {
+  display: block;
+  margin-top: 5px;
+  color: #5b6b80;
+  font-size: 12px;
+}
+
+.mcv-many-benchmark-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.mcv-many-benchmark-actions button {
+  border: 1px solid #b9cbe3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173761;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 8px 10px;
+}
+
+.mcv-many-benchmark-actions button:hover:not(:disabled),
+.mcv-many-benchmark-actions button:focus-visible:not(:disabled) {
+  border-color: #5d8fbe;
+  background: #edf5ff;
+  outline: none;
+}
+
+.mcv-many-benchmark-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mcv-many-benchmark-actions .mcv-benchmark-run {
+  width: auto;
+  margin-top: 0;
+}
+
+.mcv-many-benchmark-results {
+  margin-top: 22px;
+  border-top: 1px solid #e0e8f2;
+  padding-top: 20px;
+}
+
+.mcv-many-benchmark-table-wrap {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.mcv-many-benchmark-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  color: #243b5a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mcv-many-benchmark-table th,
+.mcv-many-benchmark-table td {
+  border: 1px solid #dfe8f3;
+  padding: 10px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mcv-many-benchmark-table thead th {
+  background: #f2f7fd;
+  color: #526a88;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mcv-many-benchmark-table tbody th {
+  background: #fbfdff;
+  font-weight: 700;
+}
+
+.mcv-many-benchmark-mount {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 800px;
+  height: 600px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media (max-width: 1200px) {
   .mcv-story-surface > div {
     grid-template-columns: minmax(0, 1fr);
@@ -266,6 +377,15 @@
 
   .mcv-story-title {
     font-size: 28px;
+  }
+
+  .mcv-many-benchmark-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mcv-many-benchmark-actions {
+    justify-content: flex-start;
   }
 
   .mcv-story-surface {

@@ -1,12 +1,18 @@
 import { Object3D } from 'three';
 
+export type RegisteredSceneObject<T> = {
+  sceneObject: Object3D;
+  jsonObject: T;
+  instanceId?: number;
+};
+
 export interface SceneObjectRegistry<T> {
   reset(): void;
   registerObject(hostObject: Object3D, jsonObject: T): void;
   getClickableObjects(): Object3D[];
   getTooltipObjects(): Object3D[];
   getInteractiveObjects(): Object3D[];
-  getParentObject(object: Object3D): { sceneObject: Object3D; jsonObject: T } | null;
+  getParentObject(object: Object3D, instanceId?: number): RegisteredSceneObject<T> | null;
 }
 
 export function createSceneObjectRegistry<T>(): SceneObjectRegistry<T> {
@@ -16,17 +22,18 @@ export function createSceneObjectRegistry<T>(): SceneObjectRegistry<T> {
   let objectDictionary: Record<number, T> = {};
 
   const findRegisteredParent = (
-    object: Object3D
-  ): { sceneObject: Object3D; jsonObject: T } | null => {
+    object: Object3D,
+    instanceId?: number
+  ): RegisteredSceneObject<T> | null => {
     if (!object.parent || !object.parent.visible || !object.visible) {
       return null;
     }
 
     if (!objectDictionary[object.id]) {
-      return findRegisteredParent(object.parent);
+      return findRegisteredParent(object.parent, instanceId);
     }
 
-    return { sceneObject: object, jsonObject: objectDictionary[object.id] };
+    return { sceneObject: object, jsonObject: objectDictionary[object.id], instanceId };
   };
 
   return {
