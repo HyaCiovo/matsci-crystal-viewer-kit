@@ -12,3 +12,5 @@ dist
 docs/*
 !docs/
 !docs/matsci-crystal-viewer-kit-technical-specification.md
+.env.local
+benchmark-results/**/*.log

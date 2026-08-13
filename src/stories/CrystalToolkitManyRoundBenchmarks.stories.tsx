@@ -16,6 +16,8 @@ const LIFECYCLE_REPLACEMENTS = 30
 const MEMORY_SHORT_DELAY_MS = 3000
 const MEMORY_LONG_DELAY_MS = 6000
 const MEMORY_PRESSURE_SETTLE_MS = 2000
+const BENCHMARK_MOUNT_WIDTH = 800
+const BENCHMARK_MOUNT_HEIGHT = 600
 
 type MemorySample = number | null
 
@@ -111,11 +113,17 @@ type LifecycleResult = {
 
 type ManyRoundReport = {
   protocol: {
+    version: string
     roundCount: number
+    interactiveRoundCount: number
     sampleCount: number
     warmupCount: number
     hoverEventCount: number
     lifecycleReplacements: number
+    mountWidth: number
+    mountHeight: number
+    sphereSegments: number
+    deviceScaleFactor: number
   }
   environment: {
     devicePixelRatio: number
@@ -167,7 +175,7 @@ const settings = {
   background: '#ffffff',
   staticScene: true,
   secondaryObjectView: false,
-  maxPixelRatio: 2,
+  maxPixelRatio: 1,
   sphereSegments: 20,
   maxLabelCount: 0,
 }
@@ -280,7 +288,19 @@ const createSceneData = (atomCount: number, interactive = false): BenchmarkScene
   }],
 })
 
-const waitForFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+const waitForFrame = () => new Promise<void>((resolve) => {
+  let settled = false
+  const finish = () => {
+    if (settled) return
+    settled = true
+    resolve()
+  }
+  const fallback = window.setTimeout(finish, 100)
+  requestAnimationFrame(() => {
+    window.clearTimeout(fallback)
+    finish()
+  })
+})
 
 const readHeap = (): MemorySample => {
   const used = (performance as PerformanceWithMemory).memory?.usedJSHeapSize
@@ -602,11 +622,17 @@ function ManyRoundBenchmark() {
     const lifecycle = await runLifecycleScenario(mount, update)
       const nextReport: ManyRoundReport = {
         protocol: {
+          version: 'crystal-viewer-benchmark-v2',
           roundCount: ROUND_COUNT,
+          interactiveRoundCount: ROUND_COUNT,
           sampleCount: SAMPLE_COUNT,
           warmupCount: WARMUP_COUNT,
           hoverEventCount: HOVER_EVENT_COUNT,
           lifecycleReplacements: LIFECYCLE_REPLACEMENTS,
+          mountWidth: BENCHMARK_MOUNT_WIDTH,
+          mountHeight: BENCHMARK_MOUNT_HEIGHT,
+          sphereSegments: settings.sphereSegments,
+          deviceScaleFactor: window.devicePixelRatio,
         },
         environment: {
           devicePixelRatio: window.devicePixelRatio,

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -8,17 +9,35 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import process from 'node:process'
 import { chromium } from 'playwright'
 
-const LEGACY_REPO_DIR = process.env.LEGACY_REPO_DIR ?? '/Users/zhujiruo/Desktop/szlab/matsci-ui'
+const REPO_DIR = fileURLToPath(new URL('..', import.meta.url))
+// The reference repository is normally checked out next to this component library.
+const LEGACY_REPO_DIR = process.env.LEGACY_REPO_DIR ?? join(REPO_DIR, '..', 'matsci-ui')
 const STORYBOOK_PORT = Number(process.env.LEGACY_STORYBOOK_PORT ?? 6007)
 const STORYBOOK_URL = process.env.LEGACY_STORYBOOK_URL ?? `http://127.0.0.1:${STORYBOOK_PORT}`
 const STORY_PATH = '/?path=/story/crystal-toolkit-viewer-legacy-many-round-benchmark--protocol'
-const REPO_DIR = fileURLToPath(new URL('..', import.meta.url))
-const OUTPUT_DIR = join(REPO_DIR, 'benchmark-results', 'legacy-reference')
+const OUTPUT_DIR = process.env.LEGACY_BENCHMARK_OUTPUT_DIR ?? join(REPO_DIR, 'benchmark-results', 'legacy-reference')
 const OUTPUT_PATH = join(OUTPUT_DIR, 'latest.json')
 const OUTPUT_MARKDOWN_PATH = join(OUTPUT_DIR, 'latest.md')
 const TEMP_STORY_PATH = join(LEGACY_REPO_DIR, 'src', 'stories', '__codexLegacyManyRoundBenchmark.stories.tsx')
 const TEMP_CSS_PATH = join(LEGACY_REPO_DIR, 'src', 'stories', 'legacy-many-round-benchmark.css')
 const MAX_WAIT_MS = Number(process.env.LEGACY_BENCHMARK_TIMEOUT_MS ?? 2 * 60 * 60 * 1000)
+const STORYBOOK_START_TIMEOUT_MS = 120000
+const CHILD_STOP_TIMEOUT_MS = 10000
+const BENCHMARK_VIEWPORT = { width: 1280, height: 720 }
+const BENCHMARK_DEVICE_SCALE_FACTOR = 1
+const STORY_QUERY_PARAMETERS = Object.entries({
+  legacyRounds: process.env.LEGACY_BENCHMARK_ROUNDS,
+  legacyInteractiveRounds: process.env.LEGACY_BENCHMARK_INTERACTIVE_ROUNDS,
+  legacySampleCount: process.env.LEGACY_BENCHMARK_SAMPLE_COUNT,
+  legacyWarmupCount: process.env.LEGACY_BENCHMARK_WARMUP_COUNT,
+  legacyLifecycleReplacements: process.env.LEGACY_BENCHMARK_LIFECYCLE_REPLACEMENTS,
+  legacyMemoryShortDelayMs: process.env.LEGACY_BENCHMARK_MEMORY_SHORT_DELAY_MS,
+  legacyMemoryLongDelayMs: process.env.LEGACY_BENCHMARK_MEMORY_LONG_DELAY_MS,
+  legacyMemoryPressureDelayMs: process.env.LEGACY_BENCHMARK_MEMORY_PRESSURE_DELAY_MS,
+}).filter(([, value]) => value !== undefined && value !== '')
+const STORY_URL = `${STORYBOOK_URL}${STORY_PATH}${STORY_QUERY_PARAMETERS.length > 0 ? `&${new URLSearchParams(STORY_QUERY_PARAMETERS).toString()}` : ''}`
+const IS_FIXED_BASELINE_RUN = STORY_QUERY_PARAMETERS.length === 0
+const GENERATED_STORY_MARKER = "title: 'Crystal Toolkit/Viewer Legacy Many Round Benchmark'"
 
 const STORY_SOURCE = String.raw`import { useCallback, useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
@@ -28,16 +47,20 @@ import { Renderer, type JSON3DObject, type ThreePosition } from '../components/c
 import type { SceneJsonObject } from '../components/crystal-toolkit/scene/simple-scene'
 import './legacy-many-round-benchmark.css'
 
+const readPositiveIntegerParameter = (name: string, fallback: number) => {
+  const value = Number(new URLSearchParams(window.location.search).get(name))
+  return Number.isInteger(value) && value > 0 ? value : fallback
+}
 const ATOM_COUNTS = [1000, 5000, 10000]
-const ROUND_COUNT = 30
-const SAMPLE_COUNT = 8
-const WARMUP_COUNT = 5
+const ROUND_COUNT = readPositiveIntegerParameter('legacyRounds', 30)
+const SAMPLE_COUNT = readPositiveIntegerParameter('legacySampleCount', 8)
+const WARMUP_COUNT = readPositiveIntegerParameter('legacyWarmupCount', 5)
 const HOVER_EVENT_COUNT = 240
-const INTERACTIVE_ROUND_COUNT = 5
-const LIFECYCLE_REPLACEMENTS = 30
-const MEMORY_SHORT_DELAY_MS = 3000
-const MEMORY_LONG_DELAY_MS = 6000
-const MEMORY_PRESSURE_SETTLE_MS = 2000
+const INTERACTIVE_ROUND_COUNT = readPositiveIntegerParameter('legacyInteractiveRounds', 30)
+const LIFECYCLE_REPLACEMENTS = readPositiveIntegerParameter('legacyLifecycleReplacements', 30)
+const MEMORY_SHORT_DELAY_MS = readPositiveIntegerParameter('legacyMemoryShortDelayMs', 3000)
+const MEMORY_LONG_DELAY_MS = Math.max(MEMORY_SHORT_DELAY_MS, readPositiveIntegerParameter('legacyMemoryLongDelayMs', 6000))
+const MEMORY_PRESSURE_SETTLE_MS = readPositiveIntegerParameter('legacyMemoryPressureDelayMs', 2000)
 const settings = { renderer: Renderer.WEBGL, background: '#ffffff', staticScene: true, secondaryObjectView: false, sphereSegments: 20 }
 const percentile = (values: number[], ratio: number) => {
   const sorted = [...values].sort((left, right) => left - right)
@@ -53,7 +76,19 @@ const readHeap = (): MemorySample => {
   const used = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize
   return typeof used === 'number' ? used : null
 }
-const waitForFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+const waitForFrame = () => new Promise<void>((resolve) => {
+  let settled = false
+  const finish = () => {
+    if (settled) return
+    settled = true
+    resolve()
+  }
+  const fallback = window.setTimeout(finish, 100)
+  requestAnimationFrame(() => {
+    window.clearTimeout(fallback)
+    finish()
+  })
+})
 const waitForMemorySample = async (delayMs: number) => {
   if (readHeap() === null) return null
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs))
@@ -208,7 +243,7 @@ const reportToMarkdown = (report) => [
   '',
   \`生命周期 geometry 峰值/最终值：\${report.lifecycle.peakGeometry.median.toFixed(2)} / \${report.lifecycle.finalGeometry.median.toFixed(2)}；texture 峰值/最终值：\${report.lifecycle.peakTexture.median.toFixed(2)} / \${report.lifecycle.finalTexture.median.toFixed(2)}。\`,
 ].join('\\n')
-type LegacyWindow = Window & { __CRYSTAL_TOOLKIT_LEGACY_REPORT_JSON__?: string, __CRYSTAL_TOOLKIT_LEGACY_PROGRESS__?: string }
+type LegacyWindow = Window & { __CRYSTAL_TOOLKIT_LEGACY_REPORT_JSON__?: string, __CRYSTAL_TOOLKIT_LEGACY_MARKDOWN__?: string, __CRYSTAL_TOOLKIT_LEGACY_PROGRESS__?: string, __CRYSTAL_TOOLKIT_LEGACY_ERROR__?: string }
 const meta = { title: 'Crystal Toolkit/Viewer Legacy Many Round Benchmark' } satisfies Meta
 export default meta
 type Story = StoryObj<typeof meta>
@@ -230,18 +265,26 @@ function LegacyBenchmark() {
       for (const atomCount of ATOM_COUNTS) staticResults.push(await runScenario(mount, atomCount, update))
       const interactive = await runInteractive(mount, update)
       const lifecycle = await runLifecycle(mount, update)
-      const report = { protocol: { roundCount: ROUND_COUNT, interactiveRoundCount: INTERACTIVE_ROUND_COUNT, sampleCount: SAMPLE_COUNT, warmupCount: WARMUP_COUNT, hoverEventCount: HOVER_EVENT_COUNT, lifecycleReplacements: LIFECYCLE_REPLACEMENTS }, environment: { devicePixelRatio: window.devicePixelRatio, heapAvailable: readHeap() !== null, userAgent: navigator.userAgent, completedAt: new Date().toISOString() }, static: staticResults, interactive, lifecycle }
+      const report = { protocol: { version: 'crystal-viewer-benchmark-v2', roundCount: ROUND_COUNT, interactiveRoundCount: INTERACTIVE_ROUND_COUNT, sampleCount: SAMPLE_COUNT, warmupCount: WARMUP_COUNT, hoverEventCount: HOVER_EVENT_COUNT, lifecycleReplacements: LIFECYCLE_REPLACEMENTS, mountWidth: 800, mountHeight: 600, sphereSegments: settings.sphereSegments, deviceScaleFactor: window.devicePixelRatio }, environment: { devicePixelRatio: window.devicePixelRatio, heapAvailable: readHeap() !== null, userAgent: navigator.userAgent, completedAt: new Date().toISOString() }, static: staticResults, interactive, lifecycle }
       const benchmarkWindow = window as LegacyWindow
       benchmarkWindow.__CRYSTAL_TOOLKIT_LEGACY_REPORT_JSON__ = JSON.stringify(report)
+      benchmarkWindow.__CRYSTAL_TOOLKIT_LEGACY_MARKDOWN__ = reportToMarkdown(report)
+      benchmarkWindow.__CRYSTAL_TOOLKIT_LEGACY_PROGRESS__ = '已完成'
       setStatus('已完成')
-    } catch (error) { setStatus(\`运行失败：\${error instanceof Error ? error.message : String(error)}\`) }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const benchmarkWindow = window as LegacyWindow
+      benchmarkWindow.__CRYSTAL_TOOLKIT_LEGACY_ERROR__ = message
+      benchmarkWindow.__CRYSTAL_TOOLKIT_LEGACY_PROGRESS__ = \`运行失败：\${message}\`
+      setStatus(\`运行失败：\${message}\`)
+    }
     finally { runningRef.current = false }
   }, [])
   return <div className="legacy-benchmark"><button onClick={run}>运行旧版固定基线</button><strong>{status}</strong><div ref={mountRef} className="legacy-mount" /></div>
 }
 `.replaceAll('\\`', '`').replaceAll('\\${', '${')
 
-const CSS_SOURCE = '.legacy-benchmark{padding:16px}.legacy-benchmark button{margin-right:12px}.legacy-mount{width:720px;height:720px;position:relative}'
+const CSS_SOURCE = '.legacy-benchmark{padding:16px}.legacy-benchmark button{margin-right:12px}.legacy-mount{width:800px;height:600px;position:relative}'
 
 
 const firstExecutable = async (paths) => {
@@ -270,13 +313,64 @@ const findChromiumExecutable = async () => {
 
 const isReady = async () => { try { return (await fetch(STORYBOOK_URL)).ok } catch { return false } }
 
+const waitForChildExit = async (child, timeoutMs) => {
+  if (child.exitCode !== null || child.signalCode !== null) return true
+  return Promise.race([
+    once(child, 'exit').then(() => true),
+    sleep(timeoutMs).then(() => false),
+  ])
+}
+
+const signalStorybook = (child, signal) => {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  try {
+    if (process.platform !== 'win32' && child.pid) {
+      process.kill(-child.pid, signal)
+      return
+    }
+  } catch {
+    // Fall back to the direct child when process-group signalling is unavailable.
+  }
+  child.kill(signal)
+}
+
+const stopStorybook = async (child) => {
+  if (!child) return
+  signalStorybook(child, 'SIGTERM')
+  if (await waitForChildExit(child, CHILD_STOP_TIMEOUT_MS)) return
+  signalStorybook(child, 'SIGKILL')
+  await waitForChildExit(child, CHILD_STOP_TIMEOUT_MS)
+}
+
 const startStorybook = async () => {
   if (await isReady()) return null
-  const child = spawn('pnpm', ['exec', 'storybook', 'dev', '--port', String(STORYBOOK_PORT), '--no-open', '--disable-telemetry'], { cwd: LEGACY_REPO_DIR, env: process.env, stdio: 'inherit' })
-  const deadline = Date.now() + 120000
+  const child = spawn('pnpm', ['exec', 'storybook', 'dev', '--port', String(STORYBOOK_PORT), '--no-open', '--disable-telemetry'], { cwd: LEGACY_REPO_DIR, env: process.env, stdio: 'inherit', detached: process.platform !== 'win32' })
+  const deadline = Date.now() + STORYBOOK_START_TIMEOUT_MS
   while (Date.now() < deadline) { if (await isReady()) return child; await sleep(1000) }
-  child.kill('SIGTERM')
+  await stopStorybook(child)
   throw new Error(`Reference Storybook did not become ready at ${STORYBOOK_URL}`)
+}
+
+const removeGeneratedTemporaryFiles = async () => {
+  const hasStory = existsSync(TEMP_STORY_PATH)
+  const hasCss = existsSync(TEMP_CSS_PATH)
+  if (!hasStory && !hasCss) return false
+
+  const [storySource, cssSource] = await Promise.all([
+    hasStory ? readFile(TEMP_STORY_PATH, 'utf8') : Promise.resolve(''),
+    hasCss ? readFile(TEMP_CSS_PATH, 'utf8') : Promise.resolve(''),
+  ])
+  const hasOnlyGeneratedFiles = (!hasStory || storySource.includes(GENERATED_STORY_MARKER))
+    && (!hasCss || cssSource === CSS_SOURCE)
+  if (!hasOnlyGeneratedFiles) {
+    throw new Error('Reference repository contains temporary benchmark files not generated by this script; refusing to overwrite them.')
+  }
+  await Promise.all([
+    hasStory ? rm(TEMP_STORY_PATH, { force: true }) : Promise.resolve(),
+    hasCss ? rm(TEMP_CSS_PATH, { force: true }) : Promise.resolve(),
+  ])
+  console.log('Removed stale temporary benchmark files from an interrupted run.')
+  return true
 }
 
 const getFrame = (page) => page.frames().find((frame) => frame.url().includes('/iframe.html'))
@@ -286,11 +380,19 @@ const waitForStatus = async (frame) => {
   let lastProgress = ''
   while (Date.now() < deadline) {
     const text = await readFrameText(frame)
-    const progress = await frame.evaluate(() => (window).__CRYSTAL_TOOLKIT_LEGACY_PROGRESS__ ?? '').catch(() => '')
+    const state = await frame.evaluate(() => ({
+      progress: (window).__CRYSTAL_TOOLKIT_LEGACY_PROGRESS__ ?? '',
+      reportJson: (window).__CRYSTAL_TOOLKIT_LEGACY_REPORT_JSON__ ?? '',
+      markdown: (window).__CRYSTAL_TOOLKIT_LEGACY_MARKDOWN__ ?? '',
+      error: (window).__CRYSTAL_TOOLKIT_LEGACY_ERROR__ ?? '',
+    })).catch(() => ({ progress: '', reportJson: '', markdown: '', error: '' }))
+    const progress = state.progress
     if (progress && progress !== lastProgress) {
       console.log(`[legacy-benchmark] ${progress}`)
       lastProgress = progress
     }
+    if (state.reportJson) return
+    if (state.error) throw new Error(`运行失败：${state.error}`)
     if (!text && frame.url().includes('error')) throw new Error(`Legacy Storybook iframe failed: ${frame.url()}`)
     const status = text.split('\n').map((line) => line.trim()).find((line) => line === '已完成' || line.startsWith('运行失败：'))
     if (status === '已完成') return
@@ -300,25 +402,75 @@ const waitForStatus = async (frame) => {
   throw new Error('Legacy benchmark timeout exceeded')
 }
 
+const synchronizeComparisonDocuments = async () => {
+  if (!IS_FIXED_BASELINE_RUN) return false
+  const currentReportPath = join(REPO_DIR, 'benchmark-results', 'latest.json')
+  if (!existsSync(currentReportPath)) {
+    console.log('Current benchmark report is not available; legacy baseline files were written, and comparison documents will update after the next current benchmark run.')
+    return false
+  }
+  const child = spawn(process.execPath, ['scripts/run-many-round-benchmark.mjs', '--sync-only'], {
+    cwd: REPO_DIR,
+    env: process.env,
+    stdio: 'inherit',
+  })
+  const [exitCode] = await once(child, 'exit')
+  if (exitCode !== 0) throw new Error(`Failed to synchronize benchmark documents (exit code ${exitCode ?? 'unknown'})`)
+  return true
+}
+
+let activeBrowser = null
+let activeStorybook = null
+let temporaryFilesCreated = false
+let cleanupPromise = null
+
+const cleanupRun = () => {
+  if (cleanupPromise) return cleanupPromise
+  cleanupPromise = (async () => {
+    await activeBrowser?.close().catch(() => undefined)
+    activeBrowser = null
+    await stopStorybook(activeStorybook)
+    activeStorybook = null
+    if (temporaryFilesCreated) {
+      await Promise.all([
+        rm(TEMP_STORY_PATH, { force: true }),
+        rm(TEMP_CSS_PATH, { force: true }),
+      ])
+      temporaryFilesCreated = false
+    }
+  })()
+  return cleanupPromise
+}
+
+const handleInterruption = (signal) => {
+  console.error(`Legacy benchmark interrupted by ${signal}; cleaning up generated resources.`)
+  void cleanupRun().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143))
+}
+
+process.once('SIGINT', () => handleInterruption('SIGINT'))
+process.once('SIGTERM', () => handleInterruption('SIGTERM'))
+
 const run = async () => {
   if (existsSync(OUTPUT_PATH) && !process.argv.includes('--force')) throw new Error(`Legacy baseline already exists: ${OUTPUT_PATH}. Use --force only to replace it.`)
   if (!existsSync(join(LEGACY_REPO_DIR, 'node_modules'))) throw new Error(`Reference dependencies are missing: ${LEGACY_REPO_DIR}`)
-  if (existsSync(TEMP_STORY_PATH) || existsSync(TEMP_CSS_PATH)) throw new Error('Reference repository already contains a temporary benchmark file; refusing to overwrite it.')
+  await removeGeneratedTemporaryFiles()
   const executablePath = await findChromiumExecutable()
   if (!executablePath) throw new Error('Chromium executable not found. Set CHROMIUM_EXECUTABLE_PATH.')
-  let temporaryFilesCreated = false
-  let storybook = null
   try {
     await writeFile(TEMP_STORY_PATH, STORY_SOURCE)
     await writeFile(TEMP_CSS_PATH, CSS_SOURCE)
     temporaryFilesCreated = true
-    storybook = await startStorybook()
-    const browser = await chromium.launch({ executablePath, headless: true })
+    activeStorybook = await startStorybook()
+    activeBrowser = await chromium.launch({ executablePath, headless: true })
     try {
-      const page = await browser.newPage()
+      const context = await activeBrowser.newContext({
+        viewport: BENCHMARK_VIEWPORT,
+        deviceScaleFactor: BENCHMARK_DEVICE_SCALE_FACTOR,
+      })
+      const page = await context.newPage()
       page.on('pageerror', (error) => console.error(`Legacy Storybook page error: ${error.message}`))
       page.on('requestfailed', (request) => console.error(`Legacy Storybook request failed: ${request.url()} ${request.failure()?.errorText ?? ''}`))
-      await page.goto(`${STORYBOOK_URL}${STORY_PATH}`, { waitUntil: 'domcontentloaded' })
+      await page.goto(STORY_URL, { waitUntil: 'domcontentloaded' })
       let frame = getFrame(page)
       const frameDeadline = Date.now() + 120000
       while (!frame && Date.now() < frameDeadline) { await sleep(1000); frame = getFrame(page) }
@@ -334,19 +486,20 @@ const run = async () => {
       const reportJson = await frame.evaluate(() => (window).__CRYSTAL_TOOLKIT_LEGACY_REPORT_JSON__)
       if (!reportJson) throw new Error('Legacy benchmark completed without a report')
       const report = JSON.parse(reportJson)
-      const markdown = reportToMarkdown(report)
+      const markdown = await frame.evaluate(() => (window).__CRYSTAL_TOOLKIT_LEGACY_MARKDOWN__)
+      if (!markdown) throw new Error('Legacy benchmark completed without Markdown output')
       await mkdir(OUTPUT_DIR, { recursive: true })
       await writeFile(OUTPUT_PATH, `${JSON.stringify({ ...report, baseline: { kind: 'reference-implementation', fixedAt: new Date().toISOString() } }, null, 2)}\n`)
       await writeFile(OUTPUT_MARKDOWN_PATH, markdown)
       console.log(`Legacy JSON: ${OUTPUT_PATH}`)
       console.log(`Legacy Markdown: ${OUTPUT_MARKDOWN_PATH}`)
-    } finally { await browser.close() }
-  } finally {
-    if (storybook) storybook.kill('SIGTERM')
-    if (temporaryFilesCreated) {
-      await rm(TEMP_STORY_PATH, { force: true })
-      await rm(TEMP_CSS_PATH, { force: true })
+      if (await synchronizeComparisonDocuments()) console.log('Comparison documents synchronized with the fixed legacy baseline.')
+    } finally {
+      await activeBrowser.close()
+      activeBrowser = null
     }
+  } finally {
+    await cleanupRun()
   }
 }
 
