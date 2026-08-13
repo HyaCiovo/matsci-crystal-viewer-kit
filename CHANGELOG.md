@@ -2,6 +2,14 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.1.7 - 2026-08-13
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- Upgrade use-resize-observer to v10 for React 19 compatibility
+- Use the v10 named resize observer hook export
+
+
 ## 0.1.6 - 2026-08-10
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

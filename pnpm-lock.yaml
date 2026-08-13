@@ -30,8 +30,8 @@ importers:
         specifier: ^0.0.0
         version: 0.0.0
       use-resize-observer:
-        specifier: ^9.1.0
-        version: 9.1.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: ^10.0.0
+        version: 10.0.0(react@19.2.7)
     devDependencies:
       '@rollup/plugin-commonjs':
         specifier: ^25.0.8
@@ -609,9 +609,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@juggle/resize-observer@3.4.0':
-    resolution: {integrity: sha512-dfLbk+PwWvFzSxwk3n5ySL0hfBog779o8h68wK/7/APo/7cgyWp5jcXockbxdk5kFRkbeXWm4Fbi9FrdN381sA==}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -2773,11 +2770,10 @@ packages:
   url-parse@1.5.10:
     resolution: {integrity: sha512-WypcfiRhfeUP9vvF0j6rw0J3hrWrw6iZv3+22h6iRMJ/8z1Tj6XfLP4DsUix5MhMPnXpiHDoKyoZ/bdCkwBCiQ==}
 
-  use-resize-observer@9.1.0:
-    resolution: {integrity: sha512-R25VqO9Wb3asSD4eqtcxk8sJalvIOYBqS8MNZlpDSQ4l4xMQxC/J7Id9HoTqPq8FwULIn0PVW+OAqF2dyYbjow==}
+  use-resize-observer@10.0.0:
+    resolution: {integrity: sha512-bR6D9uOoNB51isaK3yFs12+0Ue81jwHawsvdIyOIq5o+4ekmHn4U207IlBf3zc0fLHckhXLQtFl8moEOKcGGAQ==}
     peerDependencies:
-      react: 16.8.0 - 18
-      react-dom: 16.8.0 - 18
+      react: '>=18.2'
 
   use-sync-external-store@1.6.0:
     resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
@@ -3316,8 +3312,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@juggle/resize-observer@3.4.0': {}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
@@ -5334,11 +5328,9 @@ snapshots:
       querystringify: 2.2.0
       requires-port: 1.0.0
 
-  use-resize-observer@9.1.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  use-resize-observer@10.0.0(react@19.2.7):
     dependencies:
-      '@juggle/resize-observer': 3.4.0
       react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
 
   use-sync-external-store@1.6.0(react@19.2.7):
     dependencies:

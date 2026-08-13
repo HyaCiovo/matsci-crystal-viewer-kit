@@ -24,7 +24,7 @@ const sceneApi = vi.hoisted(() => ({
 }));
 
 vi.mock('use-resize-observer', () => ({
-  default: () => ({ width: 500, height: 500 }),
+  useResizeObserver: () => ({ width: 500, height: 500 }),
 }));
 
 vi.mock('../scene/download-event', () => ({

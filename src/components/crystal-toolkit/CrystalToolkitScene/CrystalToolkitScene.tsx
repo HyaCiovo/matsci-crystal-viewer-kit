@@ -15,7 +15,7 @@ import {
   MOUNT_NODE_STYLE
 } from '../scene/constants';
 import { CameraState } from '../CameraContextProvider/camera-reducer';
-import useResizeObserver from 'use-resize-observer';
+import { useResizeObserver } from 'use-resize-observer';
 import { Enlargeable } from '../../data-display/Enlargeable';
 import clsx from 'clsx';
 import { ModalCloseButton } from '../../data-display/Modal/ModalCloseButton/ModalCloseButton';
