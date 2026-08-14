@@ -139,6 +139,98 @@ describe('CrystalToolkitScene', () => {
     expect(container.querySelector('.ms-scene-settings-panel.ms-is-hidden')).not.toBeNull();
   });
 
+  it('keeps the settings panel open when its portaled select menu is clicked', async () => {
+    const user = userEvent.setup();
+    const menuId = 'settings-select-menu';
+    const { container } = render(
+      <CrystalToolkitScene
+        sceneSize={500}
+        settings={{ renderer: Renderer.SVG }}
+        data={sceneData}
+        debug={false}
+        toggleVisibility={{}}
+      >
+        <button type="button" aria-controls={menuId}>
+          Settings select
+        </button>
+      </CrystalToolkitScene>
+    );
+
+    await waitFor(() => expect(Scene).toHaveBeenCalled());
+
+    const settingsButton = container.querySelector('[data-tooltip-id^="settings-"]') as HTMLButtonElement;
+    await user.click(settingsButton);
+
+    const portaledMenu = document.createElement('div');
+    portaledMenu.id = menuId;
+    portaledMenu.setAttribute('role', 'listbox');
+    document.body.append(portaledMenu);
+
+    await user.click(portaledMenu);
+
+    expect(container.querySelector('.ms-scene-settings-panel.ms-is-hidden')).toBeNull();
+    portaledMenu.remove();
+  });
+
+  it('keeps the settings panel open when a portaled select is dismissed inside it', async () => {
+    const user = userEvent.setup();
+    const menuId = 'dismissible-settings-select-menu';
+    const { container } = render(
+      <CrystalToolkitScene
+        sceneSize={500}
+        settings={{ renderer: Renderer.SVG }}
+        data={sceneData}
+        debug={false}
+        toggleVisibility={{}}
+      >
+        <div>
+          <p>Settings title</p>
+          <button type="button" aria-controls={menuId}>
+            Settings select
+          </button>
+        </div>
+      </CrystalToolkitScene>
+    );
+
+    await waitFor(() => expect(Scene).toHaveBeenCalled());
+
+    const settingsButton = container.querySelector('[data-tooltip-id^="settings-"]') as HTMLButtonElement;
+    await user.click(settingsButton);
+
+    const portaledMenu = document.createElement('div');
+    portaledMenu.id = menuId;
+    portaledMenu.setAttribute('role', 'listbox');
+    document.body.append(portaledMenu);
+
+    await user.click(screen.getByText('Settings title', { exact: true }));
+
+    expect(container.querySelector('.ms-scene-settings-panel.ms-is-hidden')).toBeNull();
+    portaledMenu.remove();
+  });
+
+  it('dismisses the settings panel for an outside pointer event', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <CrystalToolkitScene
+        sceneSize={500}
+        settings={{ renderer: Renderer.SVG }}
+        data={sceneData}
+        debug={false}
+        toggleVisibility={{}}
+      >
+        <div>Settings Panel</div>
+      </CrystalToolkitScene>
+    );
+
+    await waitFor(() => expect(Scene).toHaveBeenCalled());
+
+    const settingsButton = container.querySelector('[data-tooltip-id^="settings-"]') as HTMLButtonElement;
+    await user.click(settingsButton);
+    await user.click(document.body);
+
+    expect(container.querySelector('.ms-scene-settings-panel.ms-is-hidden')).not.toBeNull();
+  });
+
   it('emits legacy export callbacks through setProps', async () => {
     const user = userEvent.setup();
     const setProps = vi.fn();

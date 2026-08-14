@@ -180,6 +180,10 @@
   max-width: 450px;
   overflow: auto;
   overscroll-behavior: contain;
+  /* Radix Select temporarily disables body pointer events while its portaled
+   * menu is open. Keep this owning panel interactive so an in-panel click
+   * dismisses only the Select menu instead of looking like a panel click-away. */
+  pointer-events: auto;
   border: 1px solid var(--mcv-border-color);
   border-radius: 16px;
   padding: 1.25rem;

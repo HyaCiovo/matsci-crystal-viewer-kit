@@ -2,6 +2,27 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.2.1 - 2026-08-13
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- fix: keep the crystal settings panel open when a portaled Select menu is dismissed inside it; fix: improve settings-panel scrollbar visibility in light and dark themes
+
+
+## 0.2.0 - 2026-08-13
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- fix: keep crystal settings panel stable around portaled select interactions
+
+
+## 0.1.8 - 2026-08-13
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- fix: keep scene settings open while selecting from portaled menus
+
+
 ## 0.1.7 - 2026-08-13
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

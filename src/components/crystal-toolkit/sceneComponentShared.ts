@@ -157,12 +157,30 @@ export const useDismissiblePanel = (open: boolean, onClose: () => void) => {
         return;
       }
 
+      const targetElement = target instanceof Element ? target : target.parentElement;
+      const portaledListbox = targetElement?.closest<HTMLElement>('[role="listbox"]');
+      const listboxId = portaledListbox?.id;
+      const belongsToPanel = listboxId
+        ? Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[aria-controls]') ?? []).some(
+            (control) => control.getAttribute('aria-controls') === listboxId
+          )
+        : false;
+
+      // A Select menu is rendered in a body-level portal. It is still owned by
+      // this panel when its trigger points to the listbox via aria-controls.
+      if (belongsToPanel) {
+        return;
+      }
+
       onClose();
     };
 
-    document.addEventListener('pointerdown', handlePointerDown);
+    // Observe in capture phase. Radix and other portaled controls can dismiss
+    // themselves during bubble handling, which would otherwise make a valid
+    // in-panel target look detached to this outside-click guard.
+    document.addEventListener('pointerdown', handlePointerDown, true);
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown, true);
     };
   }, [onClose, open]);
 

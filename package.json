@@ -1,6 +1,6 @@
 {
   "name": "@gnosys/matsci-crystal-viewer-kit",
-  "version": "0.1.7",
+  "version": "0.2.1",
   "description": "Extracted crystal structure viewer components from matsci-ui",
   "author": "hyacinth",
   "type": "module",
