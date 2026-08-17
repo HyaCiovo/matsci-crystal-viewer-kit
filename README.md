@@ -1,6 +1,6 @@
 # matsci-crystal-viewer-kit
 
-[English](./README.md) | [Chinese](./README.zh-CN.md)
+[English](./README.md) | [中文](./README.zh-CN.md)
 
 `@gnosys/matsci-crystal-viewer-kit` is a React and Three.js toolkit for interactive crystal structure visualization. It provides a complete 3D viewer runtime, a toolbar, extensible settings and legend panel slots, image capture, and scene export for materials applications.
 
