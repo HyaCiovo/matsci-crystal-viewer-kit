@@ -2,6 +2,7 @@
   "name": "@gnosys/matsci-crystal-viewer-kit",
   "version": "0.2.1",
   "description": "Extracted crystal structure viewer components from matsci-ui",
+  "license": "MIT",
   "author": "hyacinth",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
