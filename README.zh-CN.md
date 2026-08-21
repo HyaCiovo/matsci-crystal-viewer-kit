@@ -4,6 +4,8 @@
 
 `@gnosys/matsci-crystal-viewer-kit` 是一个面向材料结构展示场景的 React + Three.js 组件包，提供完整的晶体结构 3D viewer 运行时、工具栏、设置面板挂载位、图例挂载位、截图与模型导出能力。
 
+![交互式晶体结构展示](./src/stories/assets/crystal-structure-viewer.png)
+
 ## GitHub 概览
 
 `matsci-crystal-viewer-kit` 是一个可复用的晶体结构查看器工具包，面向材料科学应用构建。它以 React 和 Three.js 为基础，提供适合生产环境的 3D viewer 外壳，覆盖场景渲染、交互、导出与宿主侧自定义扩展。
@@ -39,17 +41,18 @@ pnpm add @gnosys/matsci-crystal-viewer-kit@0.2.1 --save-exact
 6. [对外导出](#对外导出)
 7. [快速开始](#快速开始)
 8. [常用 Props](#常用-props)
-9. [Scene JSON 输入模型](#scene-json-输入模型)
-10. [组件与架构概览](#组件与架构概览)
-11. [核心运行链路](#核心运行链路)
-12. [高性能设计与已实现优化](#高性能设计与已实现优化)
-13. [交互与展示能力](#交互与展示能力)
-14. [样式系统与宿主覆盖](#样式系统与宿主覆盖)
-15. [导出能力](#导出能力)
-16. [宿主集成建议](#宿主集成建议)
-17. [开发命令](#开发命令)
-18. [发布](#发布)
-19. [创新点与性能基准](#创新点与性能基准)
+9. [Scene Runtime Settings](#scene-runtime-settings)
+10. [Scene JSON 输入模型](#scene-json-输入模型)
+11. [组件与架构概览](#组件与架构概览)
+12. [核心运行链路](#核心运行链路)
+13. [高性能设计与已实现优化](#高性能设计与已实现优化)
+14. [交互与展示能力](#交互与展示能力)
+15. [样式系统与宿主覆盖](#样式系统与宿主覆盖)
+16. [导出能力](#导出能力)
+17. [宿主集成建议](#宿主集成建议)
+18. [开发命令](#开发命令)
+19. [发布](#发布)
+20. [创新点与性能基准](#创新点与性能基准)
 
 
 ## 项目定位
@@ -156,6 +159,7 @@ import '@gnosys/matsci-crystal-viewer-kit/style.css';
 - `CrystalToolkitScene`
 - `CrystalToolkitAnimationScene`
 - `PhononAnimationScene`
+- `PrimitiveMode`、`SelectionMode` 类型
 
 `Scene` 是底层运行时类，通常只在更底层定制时才会直接使用。
 
@@ -221,6 +225,9 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
   - `extractAxis`
   - `sphereSegments`
   - `cylinderSegments`
+  - `sphereMode`
+  - `cylinderMode`
+  - `selectionMode`
 
 - `sceneSize`
   viewer 画布尺寸，支持数字或字符串。
@@ -275,6 +282,55 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 
 - `className`
   viewer 根节点 className。
+
+## Scene Runtime Settings
+
+三个 viewer 入口使用相同的渲染和交互配置。新增的性能与选择配置都是可选项，旧代码不传这些字段也可以继续运行。
+
+```tsx
+<CrystalToolkitScene
+  data={sceneJson}
+  settings={{
+    sphereMode: 'instanced',
+    cylinderMode: 'instanced',
+    selectionMode: 'instance',
+  }}
+  onObjectClicked={(objects) => {
+    // 回调仍然接收匹配的 Scene JSON 对象。
+    console.log(objects);
+  }}
+/>
+```
+
+| 配置项 | 可选值 | 默认值 | 行为 |
+| --- | --- | --- | --- |
+| `sphereMode` | `'instanced' \| 'individual'` | `'instanced'` | 满足条件的静态重复球体使用一个 `THREE.InstancedMesh`，设为 `'individual'` 时每个球体使用独立 Three.js mesh。 |
+| `cylinderMode` | `'instanced' \| 'individual'` | `'instanced'` | 满足条件的静态重复键段使用一个 `THREE.InstancedMesh`，设为 `'individual'` 时每个键段使用独立 mesh。 |
+| `selectionMode` | `'object' \| 'instance'` | `'object'` | 按注册的场景对象整体选择，或通过 `instanceId` 只选择 `InstancedMesh` 中的一个实例。 |
+
+### `sphereMode`
+
+`'instanced'` 保留批量渲染路径，适合大规模静态结构。需要动画、标签、异构几何或其他不支持实例化的行为时，组件会安全回退到普通 mesh。需要每个原子都有独立 Three.js 节点的宿主可以使用 `'individual'`，但要承担相应的 draw call 成本。
+
+### `cylinderMode`
+
+`'instanced'` 会在键段共享兼容几何和材质属性时批量渲染静态键。存在逐键半径/颜色数组、交互元数据、动画或其他不兼容属性时会使用独立路径。宿主如果需要把每条键作为单独 Three.js 对象访问，可以使用 `'individual'`。
+
+### `selectionMode`
+
+`'object'` 是兼容旧版本的模式。点击后选择命中的注册 JSON 对象整体，保持 viewer 历史行为。`'instance'` 不拆分符合条件的图元批次，而是利用 Three.js 的 `intersection.instanceId` 区分 `InstancedMesh` 内的实例，因此只有被点击的图元会显示 outline。
+
+回调协议不变：`onObjectClicked` 仍然返回 Scene JSON 对象数组，不会返回 Three.js 实例或内部选择引用。实例索引只用于内部命中测试和 outline；如果宿主需要稳定的原子索引，应把索引保存在输入 JSON 中，或为每个位点使用唯一对象组。
+
+### 旧版本兼容性
+
+- 既有 props 和 Scene JSON 格式继续有效。
+- 不传 `selectionMode` 时默认使用 `'object'`，保持对象级选择。
+- 不传 `sphereMode`、`cylinderMode` 时，符合条件的对象使用优化后的实例化路径；复杂或需要独立交互的对象继续回退到独立对象。
+- `Scene`、`CrystalToolkitAnimationScene` 和 `PhononAnimationScene` 使用相同的配置名称。
+- 对外回调仍返回原始 JSON 对象，不暴露 Three.js 实例或内部选择引用。
+
+完整的配置矩阵和迁移示例见 [docs/public-api.zh-CN.md](./docs/public-api.zh-CN.md)。
 
 ## Scene JSON 输入模型
 
@@ -494,6 +550,10 @@ flowchart TD
 - 需要恢复旧 selection
 
 这让 outline 从“帧驱动”变成“状态驱动”，静态场景下可以减少大量无意义的重建。
+
+### 批量几何与精确拾取
+
+满足条件的静态球体和键段共享几何体、材质和 `InstancedMesh`。raycast 结果保留 `instanceId`，因此实例级点击和 outline 不需要把每个原子或键拆成独立 Three.js 节点。动画、逐实例样式和其他不兼容对象继续使用独立对象回退路径。
 
 ### 5. `toggleVisibility` 与 selection 清理联动
 
@@ -720,6 +780,8 @@ flowchart TD
 - 更新 selection controller
 - 重建或跳过 outline
 - 必要时更新 inset 二级视图
+
+默认 `selectionMode: 'object'` 保持历史上的整组选择。使用 `selectionMode: 'instance'` 时，批量 `InstancedMesh` 内只有实际命中的一个原子或键会显示 outline，`onObjectClicked` 的 JSON 回调结构不变。
 
 这套链路比“直接点 mesh 改材质”更稳定，也更适合后续扩展。
 

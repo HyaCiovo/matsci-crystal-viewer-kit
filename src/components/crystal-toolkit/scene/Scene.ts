@@ -26,7 +26,8 @@ import {
 } from './scene-controls';
 import {
   createSelectionController,
-  type SelectionController
+  type SelectionController,
+  type SelectionPersistence
 } from './selection-controller';
 import { buildSceneGraph } from './scene-graph';
 import {
@@ -283,7 +284,9 @@ export default class Scene {
         needRedraw = this.selectionController.applySelection(
           {
             sceneObject: object.sceneObject as Object3D,
-            jsonObject: object.jsonObject as SceneJsonLike
+            jsonObject: object.jsonObject as SceneJsonLike,
+            instanceId:
+              this.settings.selectionMode === 'instance' ? object.instanceId : undefined
           },
           {
             multiSelectEnabled: this.isMultiSelectionEnabled,
@@ -357,7 +360,8 @@ export default class Scene {
       raycaster: this.raycaster,
       getCamera: () => this.camera,
       getViewportSize: () => this.cachedMountNodeSize,
-      resolveParentObject: (object) => this.objectRegistry.getParentObject(object)
+      resolveParentObject: (object, instanceId) =>
+        this.objectRegistry.getParentObject(object, instanceId)
     });
     this.configureScene();
     this.configurePostProcessing();
@@ -502,7 +506,7 @@ export default class Scene {
     });
   }
 
-  private restorePreviousSelection(outlinedObjectIds: string[]) {
+  private restorePreviousSelection(outlinedObjectIds: SelectionPersistence[]) {
     if (outlinedObjectIds.length === 0) {
       return;
     }
@@ -559,7 +563,7 @@ export default class Scene {
     // it will then zoom on the content of the added scene
 
     // if we found an object, we should remove all tootips and clicks related to it
-    let outlinedObject: string[] = [];
+    let outlinedObject: SelectionPersistence[] = [];
     if (this.scene.getObjectByName(sceneJson.name!)) {
       outlinedObject = this.resetSceneStateForReplacement(sceneJson.name!);
     }

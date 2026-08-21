@@ -69,6 +69,14 @@ type InstancedSphereObject = THREE.Object3D & {
   };
 };
 
+type InstancedCylinderObject = THREE.Object3D & {
+  userData: {
+    instancedCylinder?: boolean;
+    cylinderPositionPairs?: PositionPair[];
+    [key: string]: unknown;
+  };
+};
+
 const RadiusTubeGeometryCtor = RadiusTubeBufferGeometry as unknown as new (
   ...args: any[]
 ) => THREE.BufferGeometry;
@@ -144,14 +152,34 @@ export class ThreeBuilder {
 
   private shouldUseInstancedSpheres(objectJson: SceneJsonLike) {
     return Boolean(
+      this.settings.sphereMode !== 'individual' &&
       !objectJson.animate &&
-        !objectJson.hoverLabel &&
-        Array.isArray(objectJson.positions) &&
-        objectJson.positions.length > 1
+      !objectJson.hoverLabel &&
+      Array.isArray(objectJson.positions) &&
+      objectJson.positions.length > 1
     );
   }
 
   private getInstancedSphereMesh(obj: THREE.Object3D) {
+    return obj.children[0] as InstancedMesh | undefined;
+  }
+
+  private shouldUseInstancedCylinders(objectJson: SceneJsonLike) {
+    return Boolean(
+      this.settings.cylinderMode !== 'individual' &&
+      !objectJson.animate &&
+      !objectJson.hoverLabel &&
+      !objectJson.clickable &&
+      !objectJson.tooltip &&
+      Array.isArray(objectJson.positionPairs) &&
+      objectJson.positionPairs.length > 1 &&
+      !Array.isArray(objectJson.radiusTop) &&
+      !Array.isArray(objectJson.radiusBottom) &&
+      !Array.isArray(objectJson.color)
+    );
+  }
+
+  private getInstancedCylinderMesh(obj: THREE.Object3D) {
     return obj.children[0] as InstancedMesh | undefined;
   }
 
@@ -176,13 +204,35 @@ export class ThreeBuilder {
     mesh.computeBoundingSphere();
   }
 
+  private updateInstancedCylinderMatrices(
+    mesh: InstancedMesh,
+    positionPairs: PositionPair[]
+  ) {
+    const matrix = new THREE.Matrix4();
+    positionPairs.forEach((positionPair, index) => {
+      const placement = this.getSegmentPlacement(positionPair);
+      matrix.compose(
+        placement.midpoint,
+        placement.quaternion,
+        new THREE.Vector3(1, placement.length, 1)
+      );
+      mesh.setMatrixAt(index, matrix);
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+  }
+
   private initializeInstancedSphereColors(
     mesh: InstancedMesh,
     color: string,
     count: number
   ) {
     const material = mesh.material as THREE.Material & { vertexColors?: boolean };
-    material.vertexColors = true;
+    // Instance colors are supplied by `instanceColor`; the unit sphere geometry
+    // has no regular `color` attribute to multiply into the shader.
+    material.vertexColors = false;
     material.needsUpdate = true;
     const instanceColor = new THREE.Color(color);
     for (let index = 0; index < count; index += 1) {
@@ -483,6 +533,20 @@ export class ThreeBuilder {
     const geom = this.getCylinderGeometry(radius, radiusTop, radiusBottom);
     const baseColor = perCylinderMaterial ? color[0] : color;
     const mat = this.makeMaterial(baseColor, object_json.animate);
+
+    if (this.shouldUseInstancedCylinders(object_json)) {
+      const positionPairs = object_json.positionPairs as PositionPair[];
+      const instancedMesh = new THREE.InstancedMesh(geom, mat, positionPairs.length);
+      instancedMesh.name = 'cylinder-instances';
+      this.updateInstancedCylinderMatrices(instancedMesh, positionPairs);
+      (obj as InstancedCylinderObject).userData.instancedCylinder = true;
+      (obj as InstancedCylinderObject).userData.cylinderPositionPairs = positionPairs.map(
+        (positionPair) => positionPair.map((position) => [...position] as ThreePosition) as PositionPair
+      );
+      obj.add(instancedMesh);
+      return obj;
+    }
+
     object_json.positionPairs.forEach((positionPair: PositionPair, idx: number) => {
       // the following is technically correct but could be optimized?
       const currentGeometry = perCylinderGeometry
@@ -1036,6 +1100,18 @@ export class ThreeBuilder {
     newPositionPair: PositionPair,
     index: number
   ) {
+    if ((obj as InstancedCylinderObject).userData.instancedCylinder) {
+      const mesh = this.getInstancedCylinderMesh(obj);
+      const positionPairs = (obj as InstancedCylinderObject).userData.cylinderPositionPairs ?? [];
+      if (!mesh || index < 0 || index >= positionPairs.length) {
+        return;
+      }
+
+      positionPairs[index] = newPositionPair;
+      this.updateInstancedCylinderMatrices(mesh, positionPairs);
+      return;
+    }
+
     const mesh = obj.children[index] as THREE.Mesh;
     this.placeSegmentMesh(mesh, this.getSegmentPlacement(newPositionPair));
   }

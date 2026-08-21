@@ -1,5 +1,6 @@
 import { Object3D } from 'three';
 
+/** A registered hit-test result, including the optional instance index. */
 export type RegisteredSceneObject<T> = {
   sceneObject: Object3D;
   jsonObject: T;
@@ -12,6 +13,10 @@ export interface SceneObjectRegistry<T> {
   getClickableObjects(): Object3D[];
   getTooltipObjects(): Object3D[];
   getInteractiveObjects(): Object3D[];
+  /**
+   * Resolves a hit object to its registered scene object and preserves the
+   * `InstancedMesh` instance index when one was provided by raycasting.
+   */
   getParentObject(object: Object3D, instanceId?: number): RegisteredSceneObject<T> | null;
 }
 
@@ -71,8 +76,8 @@ export function createSceneObjectRegistry<T>(): SceneObjectRegistry<T> {
     getInteractiveObjects() {
       return interactiveObjects;
     },
-    getParentObject(object) {
-      return findRegisteredParent(object);
+    getParentObject(object, instanceId) {
+      return findRegisteredParent(object, instanceId);
     }
   };
 }

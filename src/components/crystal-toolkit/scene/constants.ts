@@ -45,6 +45,25 @@ export enum CameraPosition {
   FRONT = ' front'
 }
 
+/**
+ * Controls whether repeated geometry is rendered as one instanced batch or
+ * as separate Three.js meshes.
+ *
+ * `instanced` is the default and keeps static, compatible primitives in a
+ * single `InstancedMesh`. `individual` opts into one mesh per primitive when
+ * callers need object-level Three.js nodes or behavior that cannot be batched.
+ */
+export type PrimitiveMode = 'instanced' | 'individual';
+
+/**
+ * Controls the granularity of click selection for interactive instances.
+ *
+ * `object` is the backward-compatible default and selects the registered
+ * scene object as a whole. `instance` uses Three.js `intersection.instanceId`
+ * so individual entries in an `InstancedMesh` can be selected independently.
+ */
+export type SelectionMode = 'instance' | 'object';
+
 // maybe move to settings
 export const TUBE_SEGMENTS = 150;
 export const RADIUS_SEGMENTS = 20;
@@ -61,6 +80,12 @@ export const defaults = {
   maxPixelRatio: 2,
   maxLabelCount: 250,
   sphereSegments: 32,
+  /** Batch compatible static sphere entries into one InstancedMesh. */
+  sphereMode: 'instanced' as PrimitiveMode,
+  /** Batch compatible static cylinder segments into one InstancedMesh. */
+  cylinderMode: 'instanced' as PrimitiveMode,
+  /** Keep whole-object selection by default for backward compatibility. */
+  selectionMode: 'object' as SelectionMode,
   cylinderSegments: 16,
   staticScene: true,
   sphereScale: 1.0,

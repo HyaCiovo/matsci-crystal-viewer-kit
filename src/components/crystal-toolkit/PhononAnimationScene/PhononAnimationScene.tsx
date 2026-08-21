@@ -81,6 +81,9 @@ export interface PhononAnimationSceneProps {
    *    sphereSegments: 32, // decrease to improve performance
    *    cylinderSegments: 16, // decrease to improve performance
    *    staticScene: true, // disable if animation required
+   *    sphereMode: 'instanced', // 'individual' keeps one Three.js mesh per atom
+   *    cylinderMode: 'instanced', // 'individual' keeps one Three.js mesh per bond segment
+   *    selectionMode: 'object', // 'instance' selects one entry in an InstancedMesh
    *    defaultZoom: 1, // 1 will zoom to fit object exactly, <1 will add padding between object and box bounds
    *    zoomToFit2D: false // if true, will zoom to fit object only along the X and Y axes (not Z)
    *    extractAxis: false // will remove the axis from the main scene

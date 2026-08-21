@@ -1,13 +1,28 @@
 import * as THREE from 'three';
-import {
-  createObjectRegistry,
-  disposeSceneHierarchy,
-  type ObjectRegistryApi
-} from '../utils';
+import { disposeSceneHierarchy } from '../utils';
 
-type SelectionReference<T> = {
+/**
+ * Connects a selected JSON object to its rendered Three.js object.
+ *
+ * `instanceId` is present only when instance-level selection is enabled and
+ * the hit came from an `InstancedMesh`. It is intentionally part of the
+ * reference rather than the JSON payload so existing click callbacks keep
+ * returning the same scene JSON objects.
+ */
+export type SelectionReference<T> = {
   sceneObject: THREE.Object3D;
   jsonObject: T;
+  instanceId?: number;
+};
+
+/**
+ * Serializable selection identity retained while a named scene object is
+ * replaced. The optional instance index preserves an instance-level outline
+ * when the replacement contains the same batched object.
+ */
+export type SelectionPersistence = {
+  id: string;
+  instanceId?: number;
 };
 
 type ApplySelectionOptions = {
@@ -28,8 +43,8 @@ export interface SelectionController<T extends { id?: string }> {
   hasOutlineChildren(): boolean;
   applySelection(reference: SelectionReference<T>, options: ApplySelectionOptions): boolean;
   clearSelection(): boolean;
-  prepareForSceneReplacement(): string[];
-  restoreSelectionByIds(ids: string[], options: RestoreSelectionOptions<T>): void;
+  prepareForSceneReplacement(): SelectionPersistence[];
+  restoreSelectionByIds(ids: SelectionPersistence[], options: RestoreSelectionOptions<T>): void;
   removeInvisibleSelections(findThreeById: (id: string) => THREE.Object3D | undefined): boolean;
   refreshOutline(findThreeById: (id: string) => THREE.Object3D | undefined): void;
   destroy(): void;
@@ -40,26 +55,83 @@ type DetachOutlineOptions = {
   clearRegistry?: boolean;
 };
 
-function cloneSceneObject(sceneObject: THREE.Object3D): THREE.Object3D {
+function getSelectionKey<T>(reference: SelectionReference<T>) {
+  return `${reference.sceneObject.uuid}:${reference.instanceId ?? 'object'}`;
+}
+
+const copySelectedInstances = (
+  source: THREE.Object3D,
+  target: THREE.Object3D,
+  instanceId: number
+) => {
+  const sourceNodes: THREE.Object3D[] = [];
+  const targetNodes: THREE.Object3D[] = [];
+  source.traverse((object) => sourceNodes.push(object));
+  target.traverse((object) => targetNodes.push(object));
+
+  const matrix = new THREE.Matrix4();
+  const color = new THREE.Color();
+
+  sourceNodes.forEach((sourceNode, index) => {
+    const targetNode = targetNodes[index];
+    if (!(sourceNode instanceof THREE.InstancedMesh) || !(targetNode instanceof THREE.InstancedMesh)) {
+      return;
+    }
+
+    if (instanceId < 0 || instanceId >= sourceNode.count) {
+      targetNode.count = 0;
+      return;
+    }
+
+    sourceNode.getMatrixAt(instanceId, matrix);
+    targetNode.count = 1;
+    targetNode.setMatrixAt(0, matrix);
+    targetNode.instanceMatrix.needsUpdate = true;
+
+    if (sourceNode.instanceColor) {
+      sourceNode.getColorAt(instanceId, color);
+      targetNode.setColorAt(0, color);
+      targetNode.instanceColor!.needsUpdate = true;
+    }
+
+    targetNode.computeBoundingBox();
+    targetNode.computeBoundingSphere();
+  });
+};
+
+function cloneSceneObject(sceneObject: THREE.Object3D, instanceId?: number): THREE.Object3D {
   const clone = sceneObject.clone();
   clone.matrixAutoUpdate = false;
   clone.uuid = sceneObject.uuid;
+
+  if (instanceId !== undefined) {
+    copySelectedInstances(sceneObject, clone, instanceId);
+  }
+
   return clone;
 }
 
 export function createSelectionController<T extends { id?: string }>(
   outlineScene: THREE.Scene
 ): SelectionController<T> {
-  const registry: ObjectRegistryApi = createObjectRegistry();
-  let selectedObjects: T[] = [];
+  const outlineObjects = new Map<string, THREE.Object3D>();
+  let selectedReferences: SelectionReference<T>[] = [];
 
   const getOutlineChildren = () => [...outlineScene.children];
 
-  const ensureOutlineObject = (sceneObject: THREE.Object3D) => {
-    if (!registry.registryHasObject(sceneObject)) {
-      registry.addToObjectRegisty(cloneSceneObject(sceneObject));
+  const ensureOutlineObject = (reference: SelectionReference<T>) => {
+    const key = getSelectionKey(reference);
+    const existingObject = outlineObjects.get(key);
+    if (existingObject) {
+      if (reference.instanceId !== undefined) {
+        copySelectedInstances(reference.sceneObject, existingObject, reference.instanceId);
+      }
+      return existingObject;
     }
-    return registry.getObjectFromRegistry(sceneObject.uuid);
+
+    const clone = cloneSceneObject(reference.sceneObject, reference.instanceId);
+    outlineObjects.set(key, clone);
+    return clone;
   };
 
   const detachOutlineChildren = ({
@@ -67,189 +139,200 @@ export function createSelectionController<T extends { id?: string }>(
     clearRegistry = false
   }: DetachOutlineOptions = {}) => {
     const children = getOutlineChildren();
-    if (children.length === 0) {
-      return;
-    }
     if (disposeChildren) {
       children.forEach((child) => disposeSceneHierarchy(child));
     }
-    outlineScene.remove(...children);
+    if (children.length > 0) {
+      outlineScene.remove(...children);
+    }
     if (clearRegistry) {
-      children.forEach((child) => registry.deleteObject(child));
+      outlineObjects.clear();
     }
   };
 
-  const addOutlineObject = (sceneObject: THREE.Object3D) => {
-    outlineScene.add(ensureOutlineObject(sceneObject));
+  const addOutlineObject = (reference: SelectionReference<T>) => {
+    outlineScene.add(ensureOutlineObject(reference));
   };
 
-  const hasSameSelectedIds = (nextSelectedObjects: T[]) => {
-    const currentIds = selectedObjects
-      .map((object) => object.id)
-      .filter((id): id is string => Boolean(id));
-    const nextIds = nextSelectedObjects
-      .map((object) => object.id)
-      .filter((id): id is string => Boolean(id));
+  const removeOutlineObject = (reference: SelectionReference<T>) => {
+    const key = getSelectionKey(reference);
+    const outlineObject = outlineObjects.get(key);
+    if (!outlineObject) {
+      return;
+    }
+    outlineScene.remove(outlineObject);
+    disposeSceneHierarchy(outlineObject);
+    outlineObjects.delete(key);
+  };
 
-    if (currentIds.length !== nextIds.length) {
+  const hasSameSelection = (nextSelectedReferences: SelectionReference<T>[]) => {
+    if (selectedReferences.length !== nextSelectedReferences.length) {
       return false;
     }
 
-    return currentIds.every((id, index) => id === nextIds[index]);
+    return selectedReferences.every(
+      (reference, index) => getSelectionKey(reference) === getSelectionKey(nextSelectedReferences[index])
+    );
   };
 
   return {
     getSelectedObjects() {
-      return [...selectedObjects];
+      return selectedReferences.map((reference) => reference.jsonObject);
     },
     getSelectedIds() {
-      return selectedObjects.map((object) => object.id).filter((id): id is string => Boolean(id));
+      return selectedReferences
+        .map((reference) => reference.jsonObject.id)
+        .filter((id): id is string => Boolean(id));
     },
     getOutlineChildren,
     hasSelection() {
-      return selectedObjects.length > 0;
+      return selectedReferences.length > 0;
     },
     hasOutlineChildren() {
       return outlineScene.children.length > 0;
     },
     applySelection(reference, options) {
-      const { sceneObject, jsonObject } = reference;
+      const referenceKey = getSelectionKey(reference);
       let changed = false;
 
       if (options.multiSelectEnabled) {
-        const nextSelectedObjects = [...selectedObjects];
-        const existingOutlineIndex = outlineScene.children.findIndex(
-          (child) => child.uuid === sceneObject.uuid
+        const nextSelectedReferences = [...selectedReferences];
+        const existingSelectionIndex = nextSelectedReferences.findIndex(
+          (selectedReference) => getSelectionKey(selectedReference) === referenceKey
         );
-        const existingJsonIndex = nextSelectedObjects.indexOf(jsonObject);
 
-        if (existingJsonIndex > -1) {
-          nextSelectedObjects.splice(existingJsonIndex, 1);
+        if (existingSelectionIndex > -1) {
+          nextSelectedReferences.splice(existingSelectionIndex, 1);
         } else if (options.shiftKey) {
-          nextSelectedObjects.push(jsonObject);
+          nextSelectedReferences.push(reference);
         } else {
-          nextSelectedObjects.splice(0, nextSelectedObjects.length, jsonObject);
+          nextSelectedReferences.splice(0, nextSelectedReferences.length, reference);
         }
 
-        changed = !hasSameSelectedIds(nextSelectedObjects);
-        selectedObjects = nextSelectedObjects;
+        changed = !hasSameSelection(nextSelectedReferences);
+        selectedReferences = nextSelectedReferences;
 
-        if (existingOutlineIndex > -1) {
-          const existingOutlineObject = outlineScene.children[existingOutlineIndex];
-          outlineScene.remove(existingOutlineObject);
-          registry.deleteObject(existingOutlineObject);
+        if (existingSelectionIndex > -1) {
+          removeOutlineObject(reference);
         } else {
           if (!options.shiftKey) {
             detachOutlineChildren({ disposeChildren: true, clearRegistry: true });
           }
-          addOutlineObject(sceneObject);
+          addOutlineObject(reference);
         }
 
         return changed;
       }
 
       changed =
-        selectedObjects.length !== 1 || selectedObjects[0] !== jsonObject || outlineScene.children.length !== 1;
+        selectedReferences.length !== 1 ||
+        getSelectionKey(selectedReferences[0]) !== referenceKey ||
+        outlineScene.children.length !== 1;
       detachOutlineChildren({ disposeChildren: true, clearRegistry: true });
-      addOutlineObject(sceneObject);
-      selectedObjects = [jsonObject];
+      addOutlineObject(reference);
+      selectedReferences = [reference];
       return changed;
     },
     clearSelection() {
-      const hadSelection = selectedObjects.length > 0 || outlineScene.children.length > 0;
-      selectedObjects = [];
+      const hadSelection = selectedReferences.length > 0 || outlineScene.children.length > 0;
+      selectedReferences = [];
       detachOutlineChildren({ disposeChildren: true, clearRegistry: true });
       return hadSelection;
     },
     prepareForSceneReplacement() {
-      const selectedIds = selectedObjects
-        .map((object) => object.id)
-        .filter((id): id is string => Boolean(id));
-      selectedObjects = [];
+      const selectedIds: SelectionPersistence[] = [];
+      selectedReferences.forEach((reference) => {
+        const id = reference.jsonObject.id;
+        if (!id) {
+          return;
+        }
+        selectedIds.push({
+          id,
+          ...(reference.instanceId === undefined ? {} : { instanceId: reference.instanceId })
+        });
+      });
+      selectedReferences = [];
       detachOutlineChildren({ disposeChildren: true, clearRegistry: true });
-      registry.clear();
       return selectedIds;
     },
-    restoreSelectionByIds(ids, options) {
-      selectedObjects = [];
+    restoreSelectionByIds(selections, options) {
+      selectedReferences = [];
       detachOutlineChildren();
 
-      ids.forEach((id) => {
+      selections.forEach(({ id, instanceId }) => {
         const threeObject = options.findThreeById(id);
         if (!threeObject) {
           return;
         }
-        addOutlineObject(threeObject);
         const jsonObject = options.findJsonByUuid(threeObject.uuid);
+        addOutlineObject({
+          sceneObject: threeObject,
+          jsonObject: jsonObject ?? ({} as T),
+          instanceId
+        });
         if (jsonObject) {
-          selectedObjects.push(jsonObject);
+          selectedReferences.push({ sceneObject: threeObject, jsonObject, instanceId });
         }
       });
     },
     removeInvisibleSelections(findThreeById) {
       let changed = false;
-      const idsToRemove: string[] = [];
+      const referencesToRemove: SelectionReference<T>[] = [];
 
-      selectedObjects = selectedObjects.filter((selectedObject) => {
-        const selectedId = selectedObject.id;
+      selectedReferences = selectedReferences.filter((selectedReference) => {
+        const selectedId = selectedReference.jsonObject.id;
         if (!selectedId) {
+          referencesToRemove.push(selectedReference);
           changed = true;
           return false;
         }
 
         let threeObject = findThreeById(selectedId);
         if (!threeObject) {
+          referencesToRemove.push(selectedReference);
           changed = true;
           return false;
         }
 
         let visible = threeObject.visible;
-        const baseObject = threeObject;
-
         while (threeObject.parent && visible) {
           threeObject = threeObject.parent;
           visible = threeObject.visible;
         }
 
         if (!visible) {
-          idsToRemove.push(baseObject.uuid);
+          referencesToRemove.push(selectedReference);
           changed = true;
+          return false;
         }
 
-        return visible;
+        return true;
       });
 
-      idsToRemove.forEach((uuid) => {
-        const outlineObject = registry.getObjectFromRegistry(uuid);
-        if (outlineObject) {
-          outlineScene.remove(outlineObject);
-          registry.deleteObject(outlineObject);
-        }
-      });
+      referencesToRemove.forEach(removeOutlineObject);
 
       return changed;
     },
     refreshOutline(findThreeById) {
-      const selectedIds = selectedObjects
-        .map((object) => object.id)
-        .filter((id): id is string => Boolean(id));
-
-      if (selectedIds.length === 0) {
+      if (selectedReferences.length === 0) {
         return;
       }
 
       detachOutlineChildren();
-      selectedIds.forEach((id) => {
-        const threeObject = findThreeById(id);
+      selectedReferences.forEach((selectedReference) => {
+        const selectedId = selectedReference.jsonObject.id;
+        if (!selectedId) {
+          return;
+        }
+        const threeObject = findThreeById(selectedId);
         if (threeObject) {
-          addOutlineObject(threeObject);
+          addOutlineObject({ ...selectedReference, sceneObject: threeObject });
         }
       });
     },
     destroy() {
-      selectedObjects = [];
+      selectedReferences = [];
       detachOutlineChildren({ disposeChildren: true, clearRegistry: true });
-      registry.clear();
     }
   };
 }

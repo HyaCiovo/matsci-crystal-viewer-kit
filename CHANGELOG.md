@@ -2,6 +2,15 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.2.2 - 2026-08-20
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- Instance-aware selection and hover highlighting
+- Batched atom and bond rendering with preserved per-instance colors
+- Public API documentation and viewer UI cleanup
+
+
 ## 0.2.1 - 2026-08-13
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

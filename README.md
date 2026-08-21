@@ -4,6 +4,8 @@
 
 `@gnosys/matsci-crystal-viewer-kit` is a React and Three.js toolkit for interactive crystal structure visualization. It provides a complete 3D viewer runtime, a toolbar, extensible settings and legend panel slots, image capture, and scene export for materials applications.
 
+![Interactive crystal structure visualization](./src/stories/assets/crystal-structure-viewer.png)
+
 ## GitHub Overview
 
 `matsci-crystal-viewer-kit` is a reusable crystal structure viewer toolkit designed for production materials-science applications. It provides a data-driven 3D viewer shell built with React and Three.js, including rendering, interaction, export, lifecycle management, and host-side customization hooks.
@@ -36,18 +38,19 @@ For integration, start with [Quick Start](#quick-start) and [Common Props](#comm
 6. [Public Exports](#public-exports)
 7. [Quick Start](#quick-start)
 8. [Common Props](#common-props)
-9. [Scene JSON Input Model](#scene-json-input-model)
-10. [Architecture](#architecture)
-11. [Runtime Flow](#runtime-flow)
-12. [Performance Design and Maintained Optimizations](#performance-design-and-maintained-optimizations)
-13. [Interaction and Presentation](#interaction-and-presentation)
-14. [Styling and Host Overrides](#styling-and-host-overrides)
-15. [Export Capabilities](#export-capabilities)
-16. [Host Integration Guidance](#host-integration-guidance)
-17. [Development Commands](#development-commands)
-18. [Release](#release)
-19. [Contributing](#contributing)
-20. [License](#license)
+9. [Scene Runtime Settings](#scene-runtime-settings)
+10. [Scene JSON Input Model](#scene-json-input-model)
+11. [Architecture](#architecture)
+12. [Runtime Flow](#runtime-flow)
+13. [Performance Design and Maintained Optimizations](#performance-design-and-maintained-optimizations)
+14. [Interaction and Presentation](#interaction-and-presentation)
+15. [Styling and Host Overrides](#styling-and-host-overrides)
+16. [Export Capabilities](#export-capabilities)
+17. [Host Integration Guidance](#host-integration-guidance)
+18. [Development Commands](#development-commands)
+19. [Release](#release)
+20. [Contributing](#contributing)
+21. [License](#license)
 
 ## Project Scope
 
@@ -141,6 +144,7 @@ The root entry point, [src/index.ts](./src/index.ts), exports:
 - `Download`
 - `PhononAnimationScene`
 - `Scene`
+- `PrimitiveMode` and `SelectionMode` types
 
 Most host applications use `CrystalToolkitScene`, `CrystalToolkitAnimationScene`, or `PhononAnimationScene`. `Scene` is the lower-level runtime class for advanced customization.
 
@@ -190,7 +194,7 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 ### Rendering
 
 - `data`: the `Scene JSON` structure to render
-- `settings`: scene runtime configuration, including `renderer`, `background`, `transparentBackground`, `antialias`, `staticScene`, `defaultZoom`, `zoomToFit2D`, `extractAxis`, `sphereSegments`, and `cylinderSegments`
+- `settings`: scene runtime configuration, including `renderer`, `background`, `transparentBackground`, `antialias`, `staticScene`, `defaultZoom`, `zoomToFit2D`, `extractAxis`, `sphereSegments`, `cylinderSegments`, `sphereMode`, `cylinderMode`, and `selectionMode`
 - `sceneSize`: canvas size, as a number or CSS size string
 - `toggleVisibility`: controls object-group visibility, such as atoms, bonds, unit cells, or polyhedra
 
@@ -215,6 +219,55 @@ export function StructureViewer({ sceneJson }: ViewerProps) {
 - `children`: the first child is mounted in the settings panel; the second child is mounted in the legend panel
 - `texts`: overrides toolbar tooltips and export menu labels
 - `className`: adds a viewer root class for host styling
+
+## Scene Runtime Settings
+
+The three viewer entry points accept the same rendering and interaction settings. The new performance and selection settings are optional, so an existing call that omits them remains valid.
+
+```tsx
+<CrystalToolkitScene
+  data={sceneJson}
+  settings={{
+    sphereMode: 'instanced',
+    cylinderMode: 'instanced',
+    selectionMode: 'instance',
+  }}
+  onObjectClicked={(objects) => {
+    // The callback still receives the matching Scene JSON objects.
+    console.log(objects);
+  }}
+/>
+```
+
+| Setting | Values | Default | Behavior |
+| --- | --- | --- | --- |
+| `sphereMode` | `'instanced' \| 'individual'` | `'instanced'` | Uses one `THREE.InstancedMesh` for eligible repeated static spheres, or one Three.js mesh per sphere when set to `'individual'`. |
+| `cylinderMode` | `'instanced' \| 'individual'` | `'instanced'` | Uses one `THREE.InstancedMesh` for eligible repeated static bond segments, or one mesh per segment when set to `'individual'`. |
+| `selectionMode` | `'object' \| 'instance'` | `'object'` | Selects the registered scene object as a whole, or selects one entry in an `InstancedMesh` by its `instanceId`. |
+
+### `sphereMode`
+
+`'instanced'` preserves the batched rendering path and is the recommended value for large static structures. Objects that need animation, labels, heterogeneous geometry, or another unsupported per-object behavior safely fall back to regular meshes. `'individual'` is intended for integrations that need one Three.js node per atom and accepts the corresponding draw-call cost.
+
+### `cylinderMode`
+
+`'instanced'` batches static bond segments when they share compatible geometry and material properties. Bonds with per-segment radius or color arrays, interaction metadata, animation, or other incompatible attributes use the individual path. Set `'individual'` when host code needs to address each bond segment as its own Three.js object.
+
+### `selectionMode`
+
+`'object'` is the compatibility mode. A click selects the registered JSON object represented by the hit scene node, which matches the historical behavior of the viewer. `'instance'` keeps eligible primitives batched but uses Three.js `intersection.instanceId` to distinguish entries inside an `InstancedMesh`; only the hit primitive is outlined.
+
+The callback contract does not change: `onObjectClicked` continues to receive an array of Scene JSON objects. The instance index is used internally for hit testing and outline rendering, so hosts that need a stable atom index should keep that index in the input JSON object or use a unique object group per site.
+
+### Backward compatibility
+
+- Existing props and Scene JSON formats remain valid.
+- Omitting `selectionMode` keeps object-level selection through the `'object'` default.
+- Omitting `sphereMode` and `cylinderMode` uses the optimized instanced path when the object is eligible; complex or interactive objects retain their individual fallback.
+- `Scene`, `CrystalToolkitAnimationScene`, and `PhononAnimationScene` share the same setting names.
+- The public callback still returns the original JSON objects rather than Three.js instances or internal selection references.
+
+See the concise reference in [docs/public-api.md](./docs/public-api.md) for the complete setting matrix and migration examples.
 
 ## Scene JSON Input Model
 
@@ -303,6 +356,10 @@ The main viewport and scissor state are cached to prevent redundant state setup 
 
 Selection outline work is performed only when selection or visibility changes. A static camera and static selection do not cause unnecessary outline recomputation.
 
+### Batched Geometry With Precise Picking
+
+Eligible static spheres and bond segments share geometry and material through `InstancedMesh`. Raycast results retain `instanceId`, so instance-level picking and outlines do not require splitting every atom or bond into a separate Three.js node. Animation, per-item styling, and other incompatible objects use the individual fallback path.
+
 ### Visibility and Selection Consistency
 
 Visibility toggles remove selections that are no longer renderable and mark the outline state dirty. This keeps selection, outline, inset rendering, and visibility in sync.
@@ -327,7 +384,7 @@ The standard toolbar exposes fullscreen, settings, reset camera, image capture, 
 
 ### Selection and Highlighting
 
-Objects can be selectable, clickable, and tooltip-enabled. The runtime keeps an interactive registry so one hit-test result can serve selection, tooltip, and cursor decisions.
+Objects can be selectable, clickable, and tooltip-enabled. The runtime keeps an interactive registry so one hit-test result can serve selection, tooltip, and cursor decisions. Use `selectionMode: 'object'` for the historical whole-object behavior or `selectionMode: 'instance'` for a single entry in an instanced batch. Instance-level outlines do not change the `onObjectClicked` JSON callback shape.
 
 ### Animation
 
