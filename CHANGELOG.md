@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.2.3 - 2026-08-27
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- Improve stable crystal selection and preserve per-instance rendering colors.
+
+
 ## 0.2.2 - 2026-08-20
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

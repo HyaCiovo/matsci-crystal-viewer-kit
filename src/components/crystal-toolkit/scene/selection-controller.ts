@@ -99,10 +99,18 @@ const copySelectedInstances = (
   });
 };
 
+function syncCloneWorldTransform(source: THREE.Object3D, target: THREE.Object3D) {
+  source.updateWorldMatrix(true, false);
+  target.matrix.copy(source.matrixWorld);
+  target.matrixWorld.copy(source.matrixWorld);
+  target.matrixAutoUpdate = false;
+  target.matrixWorldNeedsUpdate = false;
+}
+
 function cloneSceneObject(sceneObject: THREE.Object3D, instanceId?: number): THREE.Object3D {
   const clone = sceneObject.clone();
-  clone.matrixAutoUpdate = false;
   clone.uuid = sceneObject.uuid;
+  syncCloneWorldTransform(sceneObject, clone);
 
   if (instanceId !== undefined) {
     copySelectedInstances(sceneObject, clone, instanceId);
@@ -123,6 +131,7 @@ export function createSelectionController<T extends { id?: string }>(
     const key = getSelectionKey(reference);
     const existingObject = outlineObjects.get(key);
     if (existingObject) {
+      syncCloneWorldTransform(reference.sceneObject, existingObject);
       if (reference.instanceId !== undefined) {
         copySelectedInstances(reference.sceneObject, existingObject, reference.instanceId);
       }

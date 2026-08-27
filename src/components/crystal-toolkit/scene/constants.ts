@@ -64,6 +64,9 @@ export type PrimitiveMode = 'instanced' | 'individual';
  */
 export type SelectionMode = 'instance' | 'object';
 
+/** Controls how a selected object is indicated in the main viewport. */
+export type SelectionIndicator = 'outline' | 'screen-box';
+
 // maybe move to settings
 export const TUBE_SEGMENTS = 150;
 export const RADIUS_SEGMENTS = 20;
@@ -78,6 +81,9 @@ export const defaults = {
   renderDivBackground: false,
   background: '#ffffff',
   maxPixelRatio: 2,
+  /** Adapt the WebGL pixel ratio to keep large viewports within a bounded budget. */
+  adaptivePixelRatio: false,
+  maxRenderPixels: 2_000_000,
   maxLabelCount: 250,
   sphereSegments: 32,
   /** Batch compatible static sphere entries into one InstancedMesh. */
@@ -86,6 +92,8 @@ export const defaults = {
   cylinderMode: 'instanced' as PrimitiveMode,
   /** Keep whole-object selection by default for backward compatibility. */
   selectionMode: 'object' as SelectionMode,
+  /** Use an axis-aligned screen-space frame for selected objects when enabled. */
+  selectionIndicator: 'outline' as SelectionIndicator,
   cylinderSegments: 16,
   staticScene: true,
   sphereScale: 1.0,

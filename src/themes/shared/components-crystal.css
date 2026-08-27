@@ -219,6 +219,29 @@
   z-index: 1;
 }
 
+:where(.mcv-theme, .mcv-root) .ms-selection-indicator-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-selection-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  border: 2px solid var(--mcv-selection-indicator-color, #0f172a);
+  border-radius: 4px;
+  pointer-events: none;
+  transform-origin: top left;
+}
+
+:where(.mcv-theme, .mcv-root) .ms-selection-indicator[data-shape='circle'] {
+  border-radius: 50%;
+}
+
 /**
  * Include this explicitly so that toggling the settings panel works without bulma
  */

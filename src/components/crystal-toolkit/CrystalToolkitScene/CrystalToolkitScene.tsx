@@ -57,6 +57,12 @@ export interface CrystalToolkitSceneProps {
   children?: ReactNode;
 
   /**
+   * Optional bottom panel without requiring a settings-panel child.
+   * This is useful for read-only viewers that only need a legend.
+   */
+  bottomPanel?: ReactNode;
+
+  /**
    * Class name that will wrap around the whole scene component.
    * When enlarged, this class name is applied to the modal-content element.
    */
@@ -82,6 +88,8 @@ export interface CrystalToolkitSceneProps {
    *    transparentBackground: false, // transparent background
    *    background: '#ffffff', // background color if not transparent,
    *    maxPixelRatio: 2, // cap device pixel ratio to limit framebuffer cost
+   *    adaptivePixelRatio: false, // scale pixel ratio with the viewport size
+   *    maxRenderPixels: 2000000, // target framebuffer budget when adaptivePixelRatio is enabled
    *    maxLabelCount: 250, // cap CSS2D labels; set 0 to disable labels
    *    sphereSegments: 32, // decrease to improve performance
    *    cylinderSegments: 16, // decrease to improve performance
@@ -89,6 +97,7 @@ export interface CrystalToolkitSceneProps {
    *    sphereMode: 'instanced', // 'individual' keeps one Three.js mesh per atom
    *    cylinderMode: 'instanced', // 'individual' keeps one Three.js mesh per bond segment
    *    selectionMode: 'object', // 'instance' selects one entry in an InstancedMesh
+   *    selectionIndicator: 'outline', // 'screen-box' keeps the selection frame facing the viewport
    *    defaultZoom: 1, // 1 will zoom to fit object exactly, <1 will add padding between object and box bounds
    *    zoomToFit2D: false // if true, will zoom to fit object only along the X and Y axes (not Z)
    *    extractAxis: false // will remove the axis from the main scene
@@ -302,9 +311,13 @@ export const CrystalToolkitScene: React.FC<CrystalToolkitSceneProps> = ({
   onObjectClickedRef.current = props.onObjectClicked;
   const [expanded, setExpanded] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
-  const { settingsPanel, bottomPanel, hasSettingsPanel, hasBottomPanel } = useScenePanels(
-    props.children
-  );
+  const {
+    settingsPanel,
+    bottomPanel: childBottomPanel,
+    hasSettingsPanel,
+  } = useScenePanels(props.children);
+  const bottomPanel = props.bottomPanel ?? childBottomPanel;
+  const hasBottomPanel = Boolean(bottomPanel);
   const { panelRef: settingsPanelRef, triggerRef: settingsTriggerRef } = useDismissiblePanel(
     showSettingsPanel,
     () => setShowSettingsPanel(false)

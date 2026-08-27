@@ -1,6 +1,6 @@
 {
   "name": "@gnosys/matsci-crystal-viewer-kit",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Modern React and Three.js crystal structure viewer for materials science applications.",
   "license": "MIT",
   "author": "hyacinth",

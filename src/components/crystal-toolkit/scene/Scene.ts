@@ -100,6 +100,8 @@ export default class Scene {
   private outlineDirty = false;
   private mainViewportConfigured = false;
   private resizeFrameId?: number;
+  private screenSelectionLayer: HTMLDivElement | null = null;
+  private screenSelectionIndicators = new Map<string, HTMLDivElement>();
 
   private cacheMountBBox(mountNode: Element) {
     this.cachedMountNodeSize = { width: mountNode.clientWidth, height: mountNode.clientHeight };
@@ -107,6 +109,38 @@ export default class Scene {
 
   private getCachedMountBBox() {
     return this.cachedMountNodeSize;
+  }
+
+  private getRendererPixelRatio(width: number, height: number) {
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const maxPixelRatio =
+      typeof this.settings.maxPixelRatio === 'number' && this.settings.maxPixelRatio > 0
+        ? this.settings.maxPixelRatio
+        : 2;
+    const devicePixelRatioCap = Math.min(devicePixelRatio, maxPixelRatio);
+
+    if (
+      !this.settings.adaptivePixelRatio ||
+      width <= 0 ||
+      height <= 0 ||
+      typeof this.settings.maxRenderPixels !== 'number' ||
+      this.settings.maxRenderPixels <= 0
+    ) {
+      return devicePixelRatioCap;
+    }
+
+    const viewportPixelRatio = Math.sqrt(this.settings.maxRenderPixels / (width * height));
+    return Math.min(devicePixelRatioCap, Math.max(0.75, viewportPixelRatio));
+  }
+
+  private syncRendererPixelRatio(renderer: WebGLRenderer, width: number, height: number) {
+    const nextPixelRatio = this.getRendererPixelRatio(width, height);
+    if (Math.abs(renderer.getPixelRatio() - nextPixelRatio) < 0.01) {
+      return false;
+    }
+
+    renderer.setPixelRatio(nextPixelRatio);
+    return true;
   }
 
   private getRendererMountNode() {
@@ -121,12 +155,8 @@ export default class Scene {
           alpha: this.settings.transparentBackground
         });
         renderer.autoClear = false;
-        const devicePixelRatio = window.devicePixelRatio || 1;
-        const maxPixelRatio =
-          typeof this.settings.maxPixelRatio === 'number' && this.settings.maxPixelRatio > 0
-            ? this.settings.maxPixelRatio
-            : 2;
-        renderer.setPixelRatio(Math.min(devicePixelRatio, maxPixelRatio));
+        const { width, height } = this.getCachedMountBBox();
+        renderer.setPixelRatio(this.getRendererPixelRatio(width, height));
         (renderer as any).gammaFactor = 2.2;
         renderer.setClearColor(0xfffff, 0.0);
         return renderer;
@@ -149,6 +179,9 @@ export default class Scene {
 
     this.renderer = renderer;
     const { width, height } = this.getCachedMountBBox();
+    if (renderer instanceof WebGLRenderer) {
+      this.syncRendererPixelRatio(renderer, width, height);
+    }
     this.renderer.setSize(width, height);
     this.mainViewportConfigured = false;
     if (this.renderer instanceof WebGLRenderer) {
@@ -257,9 +290,213 @@ export default class Scene {
       mountNode.appendChild(this.labelRenderer.domElement);
     }
 
+    this.attachScreenSelectionLayer(mountNode);
+
     this.cacheMountBBox(mountNode);
     this.mainViewportConfigured = false;
     this.scheduleRendererResize();
+  }
+
+  private attachScreenSelectionLayer(mountNode: Element) {
+    if (this.settings.selectionIndicator !== 'screen-box' || typeof document === 'undefined') {
+      return;
+    }
+
+    if (!this.screenSelectionLayer) {
+      this.screenSelectionLayer = document.createElement('div');
+      this.screenSelectionLayer.className = 'ms-selection-indicator-layer';
+      this.screenSelectionLayer.setAttribute('aria-hidden', 'true');
+    }
+
+    if (this.screenSelectionLayer.parentElement !== mountNode) {
+      mountNode.appendChild(this.screenSelectionLayer);
+    }
+  }
+
+  private clearScreenSelectionIndicators() {
+    this.screenSelectionIndicators.forEach((indicator) => indicator.remove());
+    this.screenSelectionIndicators.clear();
+    if (this.screenSelectionLayer) {
+      this.screenSelectionLayer.hidden = true;
+    }
+  }
+
+  private getProjectedGeometryBounds(selectedObject: THREE.Object3D, width: number, height: number) {
+    let meshCandidate: THREE.Mesh | null = null;
+    selectedObject.traverse((object) => {
+      if (
+        !meshCandidate &&
+        object instanceof THREE.Mesh &&
+        object.geometry.getAttribute('position')
+      ) {
+        meshCandidate = object;
+      }
+    });
+
+    if (!meshCandidate) {
+      return null;
+    }
+
+    const mesh = meshCandidate as THREE.Mesh;
+    const positionAttribute = mesh.geometry.getAttribute('position');
+    if (!positionAttribute || positionAttribute.count === 0) {
+      return null;
+    }
+
+    const worldMatrix = mesh.matrixWorld.clone();
+    if (mesh instanceof THREE.InstancedMesh) {
+      if (mesh.count === 0) {
+        return null;
+      }
+
+      const instanceMatrix = new THREE.Matrix4();
+      mesh.getMatrixAt(0, instanceMatrix);
+      worldMatrix.multiply(instanceMatrix);
+    }
+
+    const projectedPoint = new THREE.Vector3();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (let index = 0; index < positionAttribute.count; index += 1) {
+      projectedPoint.fromBufferAttribute(positionAttribute, index).applyMatrix4(worldMatrix);
+      projectedPoint.project(this.camera);
+
+      if (
+        !Number.isFinite(projectedPoint.x) ||
+        !Number.isFinite(projectedPoint.y) ||
+        !Number.isFinite(projectedPoint.z)
+      ) {
+        continue;
+      }
+
+      const screenX = ((projectedPoint.x + 1) / 2) * width;
+      const screenY = ((1 - projectedPoint.y) / 2) * height;
+      minX = Math.min(minX, screenX);
+      maxX = Math.max(maxX, screenX);
+      minY = Math.min(minY, screenY);
+      maxY = Math.max(maxY, screenY);
+    }
+
+    if (![minX, maxX, minY, maxY].every(Number.isFinite)) {
+      return null;
+    }
+
+    return { minX, maxX, minY, maxY };
+  }
+
+  private updateScreenSelectionIndicators() {
+    if (
+      this.settings.selectionIndicator !== 'screen-box' ||
+      !this.screenSelectionLayer ||
+      !this.camera
+    ) {
+      return;
+    }
+
+    const selectionLayer = this.screenSelectionLayer;
+    const selectedObjects = this.selectionController.getOutlineChildren();
+    if (selectedObjects.length === 0) {
+      this.clearScreenSelectionIndicators();
+      return;
+    }
+
+    const { width, height } = this.getCachedMountBBox();
+    if (width <= 0 || height <= 0) {
+      this.clearScreenSelectionIndicators();
+      return;
+    }
+
+    this.outlineScene.updateMatrixWorld(true);
+    selectionLayer.hidden = false;
+    const activeKeys = new Set<string>();
+
+    selectedObjects.forEach((selectedObject, index) => {
+      const key = `${selectedObject.uuid}:${index}`;
+      activeKeys.add(key);
+      const jsonObject = this.threeUUIDTojsonObject[selectedObject.uuid];
+      const indicator =
+        this.screenSelectionIndicators.get(key) ?? document.createElement('div');
+      indicator.className = 'ms-selection-indicator';
+      const isSphere = jsonObject?.type === 'spheres';
+      indicator.dataset.shape = isSphere ? 'circle' : 'box';
+
+      const projectedGeometryBounds = this.getProjectedGeometryBounds(selectedObject, width, height);
+      if (projectedGeometryBounds) {
+        const geometryWidth = projectedGeometryBounds.maxX - projectedGeometryBounds.minX;
+        const geometryHeight = projectedGeometryBounds.maxY - projectedGeometryBounds.minY;
+        const padding = isSphere ? 2 : 6;
+        const indicatorWidth = Math.min(
+          width,
+          Math.max(18, (isSphere ? Math.max(geometryWidth, geometryHeight) : geometryWidth) + padding * 2)
+        );
+        const indicatorHeight = Math.min(
+          height,
+          Math.max(18, (isSphere ? Math.max(geometryWidth, geometryHeight) : geometryHeight) + padding * 2)
+        );
+        const centerX = (projectedGeometryBounds.minX + projectedGeometryBounds.maxX) / 2;
+        const centerY = (projectedGeometryBounds.minY + projectedGeometryBounds.maxY) / 2;
+        const left = centerX - indicatorWidth / 2;
+        const top = centerY - indicatorHeight / 2;
+        const visible =
+          left < width && left + indicatorWidth > 0 && top < height && top + indicatorHeight > 0;
+
+        indicator.hidden = !visible;
+        indicator.style.width = `${indicatorWidth}px`;
+        indicator.style.height = `${indicatorHeight}px`;
+        indicator.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+        selectionLayer.appendChild(indicator);
+        this.screenSelectionIndicators.set(key, indicator);
+        return;
+      }
+
+      const bounds = new THREE.Box3().setFromObject(selectedObject);
+      if (bounds.isEmpty()) {
+        indicator.hidden = true;
+        selectionLayer.appendChild(indicator);
+        this.screenSelectionIndicators.set(key, indicator);
+        return;
+      }
+
+      const corners = [
+        new THREE.Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
+        new THREE.Vector3(bounds.min.x, bounds.min.y, bounds.max.z),
+        new THREE.Vector3(bounds.min.x, bounds.max.y, bounds.min.z),
+        new THREE.Vector3(bounds.min.x, bounds.max.y, bounds.max.z),
+        new THREE.Vector3(bounds.max.x, bounds.min.y, bounds.min.z),
+        new THREE.Vector3(bounds.max.x, bounds.min.y, bounds.max.z),
+        new THREE.Vector3(bounds.max.x, bounds.max.y, bounds.min.z),
+        new THREE.Vector3(bounds.max.x, bounds.max.y, bounds.max.z)
+      ];
+      const projected = corners.map((corner) => corner.project(this.camera));
+      const minX = Math.min(...projected.map((point) => ((point.x + 1) / 2) * width));
+      const maxX = Math.max(...projected.map((point) => ((point.x + 1) / 2) * width));
+      const minY = Math.min(...projected.map((point) => ((1 - point.y) / 2) * height));
+      const maxY = Math.max(...projected.map((point) => ((1 - point.y) / 2) * height));
+      const padding = jsonObject?.type === 'spheres' ? 2 : 6;
+      const indicatorWidth = Math.min(width, Math.max(18, maxX - minX + padding * 2));
+      const indicatorHeight = Math.min(height, Math.max(18, maxY - minY + padding * 2));
+      const left = minX - padding;
+      const top = minY - padding;
+      const visible =
+        left < width && left + indicatorWidth > 0 && top < height && top + indicatorHeight > 0;
+
+      indicator.hidden = !visible;
+      indicator.style.width = `${indicatorWidth}px`;
+      indicator.style.height = `${indicatorHeight}px`;
+      indicator.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+      selectionLayer.appendChild(indicator);
+      this.screenSelectionIndicators.set(key, indicator);
+    });
+
+    this.screenSelectionIndicators.forEach((indicator, key) => {
+      if (!activeKeys.has(key)) {
+        indicator.remove();
+        this.screenSelectionIndicators.delete(key);
+      }
+    });
   }
 
   public updateCamera(position: Vector3, rotation?: Quaternion, zoom?: number) {
@@ -461,12 +698,16 @@ export default class Scene {
     this.syncLabelRendererLayout(size);
     this.syncSvgRendererSize(size);
     this.syncCameraAspect(size);
+    const pixelRatioChanged =
+      this.renderer instanceof WebGLRenderer
+        ? this.syncRendererPixelRatio(this.renderer, size.width, size.height)
+        : false;
     const cssSizeChanged = canvas.clientWidth !== size.width || canvas.clientHeight !== size.height;
     const pixelRatio = this.renderer instanceof WebGLRenderer ? this.renderer.getPixelRatio() : 1;
     const bufferWidth = Math.round(size.width * pixelRatio);
     const bufferHeight = Math.round(size.height * pixelRatio);
     const bufferSizeChanged = canvas.width !== bufferWidth || canvas.height !== bufferHeight;
-    const sizeChanged = cssSizeChanged || bufferSizeChanged;
+    const sizeChanged = cssSizeChanged || bufferSizeChanged || pixelRatioChanged;
     if (this.renderer instanceof WebGLRenderer && (sizeChanged || !this.mainViewportConfigured)) {
       this.syncMainViewport(this.renderer, size);
     }
@@ -519,7 +760,9 @@ export default class Scene {
     if (this.selectionController.hasOutlineChildren()) {
       this.outlineDirty = true;
       this.refreshOutlineIfNeeded();
-      this.inset.showObject(this.selectionController.getOutlineChildren());
+      if (this.settings.secondaryObjectView) {
+        this.inset.showObject(this.selectionController.getOutlineChildren());
+      }
     }
   }
 
@@ -682,6 +925,7 @@ export default class Scene {
 
     //TODO(chab) make a dedicated rendering for SVG
     this.renderInlet();
+    this.updateScreenSelectionIndicators();
   }
 
   private renderInlet() {
@@ -780,6 +1024,12 @@ export default class Scene {
     this.removeDomNode(this.renderer?.domElement);
   }
 
+  private removeScreenSelectionLayer() {
+    this.clearScreenSelectionIndicators();
+    this.removeDomNode(this.screenSelectionLayer);
+    this.screenSelectionLayer = null;
+  }
+
   private disposeRendererResources() {
     if (this.renderer instanceof THREE.WebGLRenderer) {
       this.renderer.forceContextLoss();
@@ -803,6 +1053,7 @@ export default class Scene {
     this.destroyControllers();
     disposeSceneHierarchy(this.scene);
     this.objectBuilder.dispose();
+    this.removeScreenSelectionLayer();
     this.removeDomRenderers();
     this.disposeRendererResources();
   }
@@ -866,6 +1117,9 @@ export default class Scene {
   private configurePostProcessing() {
     if (this.settings.renderer === Renderer.SVG) {
       console.warn('No post processing pass for SVG');
+      return;
+    }
+    if (this.settings.selectionIndicator === 'screen-box') {
       return;
     }
     //TODO(chab) look at three.js to implement the texture

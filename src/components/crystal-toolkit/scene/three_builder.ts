@@ -230,8 +230,9 @@ export class ThreeBuilder {
     count: number
   ) {
     const material = mesh.material as THREE.Material & { vertexColors?: boolean };
-    // Instance colors are supplied by `instanceColor`; the unit sphere geometry
-    // has no regular `color` attribute to multiply into the shader.
+    // `InstancedMesh.setColorAt` uses the instanceColor attribute. Do not enable
+    // regular vertex colors here: the shared sphere geometry has no `color`
+    // attribute, and enabling that shader path renders the spheres black.
     material.vertexColors = false;
     material.needsUpdate = true;
     const instanceColor = new THREE.Color(color);

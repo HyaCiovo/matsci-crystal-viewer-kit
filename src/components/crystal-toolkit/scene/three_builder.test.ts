@@ -38,6 +38,10 @@ describe('ThreeBuilder instanced spheres', () => {
     expect(mesh.count).toBe(2)
     expect(mesh.instanceColor).not.toBeNull()
     expect(material.vertexColors).toBe(false)
+
+    const instanceColor = new THREE.Color()
+    mesh.getColorAt(0, instanceColor)
+    expect(instanceColor.getHexString()).toBe('ff0000')
   })
 
   it('supports an individual sphere mode without changing the scene data', () => {
@@ -93,6 +97,7 @@ describe('ThreeBuilder instanced cylinders', () => {
 
     expect(mesh).toBeInstanceOf(THREE.InstancedMesh)
     expect(mesh.count).toBe(2)
+    expect((mesh.material as THREE.MeshStandardMaterial).color.getHexString()).toBe('ff0000')
   })
 
   it('keeps individual bond segments available as a compatibility mode', () => {
