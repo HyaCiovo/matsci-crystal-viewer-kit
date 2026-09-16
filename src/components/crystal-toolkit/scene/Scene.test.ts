@@ -18,4 +18,24 @@ describe('Scene inset settings', () => {
     expect(updateViewportsize).toHaveBeenCalledWith(96, 12);
     expect(renderScene).toHaveBeenCalledOnce();
   });
+
+  it('keeps the inset axis current when restoring a selection after replacing the scene', () => {
+    const scene = Object.create(Scene.prototype) as Scene;
+    const axis = {};
+    const axisJson = { name: 'axes' };
+    const setAxis = vi.fn();
+    const showAxis = vi.fn();
+
+    Object.assign(scene as object, {
+      axis,
+      axisJson,
+      inset: { setAxis, showAxis },
+      selectionController: { hasOutlineChildren: () => true }
+    });
+
+    (scene as any).syncInsetWithCurrentScene();
+
+    expect(setAxis).toHaveBeenCalledWith(axis, axisJson);
+    expect(showAxis).not.toHaveBeenCalled();
+  });
 });

@@ -623,7 +623,6 @@ export default class Scene {
       this.scene,
       (sceneJson.origin ?? [0, 0, 0]) as ThreePosition,
       this.camera,
-      this.objectBuilder,
       size,
       size,
       padding
@@ -783,12 +782,18 @@ export default class Scene {
   }
 
   private syncInsetWithCurrentScene() {
-    if (!this.inset || !this.axis || !this.axisJson || this.selectionController.hasOutlineChildren()) {
+    if (!this.inset || !this.axis || !this.axisJson) {
       return;
     }
 
+    // Keep the axis used by the inset in sync even when a selection is restored.
+    // Otherwise, clearing that restored selection later calls showAxis() with the
+    // disposed axis object from the previous scene.
     this.inset.setAxis(this.axis, this.axisJson);
-    this.inset.updateSelectedObject(this.axis, this.axisJson);
+
+    if (!this.selectionController.hasOutlineChildren()) {
+      this.inset.showAxis();
+    }
   }
 
   private buildAnimationsForScene(objectIdsToAnimate: string[]) {

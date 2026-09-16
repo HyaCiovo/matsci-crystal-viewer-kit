@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getSceneWithBackground, ThreeBuilder } from './three_builder';
+import { getSceneWithBackground } from './three_builder';
 import { disposeSceneHierarchy } from '../utils';
 import { ThreePosition } from './constants';
 import type { SceneJsonObject } from './scene-types';
@@ -12,9 +12,6 @@ export enum ScenePosition {
   HIDDEN = 'HIDDEN',
 }
 
-const AXIS_RADIUS = 0.07;
-const HEAD_AXIS_LENGTH = 0.24;
-const HEAD_WIDTH = 0.14;
 const MIN_SIZE = 50;
 const DEFAULT_SIZE = 130;
 
@@ -44,11 +41,6 @@ type InsetState = {
   insetPadding: number;
   axisPadding: number;
 };
-
-function makeObject(threebuilder: ThreeBuilder, objectJson: InsetSceneJson) {
-  const obj = new THREE.Object3D();
-  return threebuilder.makeObject(objectJson, obj);
-}
 
 function setupInsetCamera(
   state: InsetState,
@@ -80,48 +72,12 @@ function setupInsetCamera(
   insetCamera.updateProjectionMatrix();
 }
 
-function rescaleAxis(
-  state: InsetState,
-  insetCamera: THREE.OrthographicCamera,
-  threebuilder: ThreeBuilder
-) {
-  const box = new THREE.Box3().setFromObject(state.detailedObject);
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  size.project(insetCamera);
-  const widthOnScreenBuffer = Math.max(size.x, size.y, size.z);
-  const width = (widthOnScreenBuffer / 2) * state.insetWidth;
-  const scale = (state.insetWidth / 2 - state.axisPadding * 2) / width;
-
-  const targetRadius = AXIS_RADIUS * (scale / 1.5);
-  const targetHeadLength = HEAD_AXIS_LENGTH * (scale / 1.5);
-  const targetWidth = HEAD_WIDTH * (scale / 1.5);
-  state.axisJson.contents = (state.axisJson.contents ?? []).map((item: InsetSceneJson) => ({
-    ...item,
-    radius: targetRadius,
-    headLength: targetHeadLength,
-    headWidth: targetWidth,
-  }));
-
-  state.detailedObject.remove(
-    state.detailedObject.children[0],
-    state.detailedObject.children[1],
-    state.detailedObject.children[2]
-  );
-  state.detailedObject.add(
-    makeObject(threebuilder, state.axisJson.contents[0]),
-    makeObject(threebuilder, state.axisJson.contents[1]),
-    makeObject(threebuilder, state.axisJson.contents[2])
-  );
-}
-
 export function createInsetController(
   detailedObject: THREE.Object3D,
   axisJson: InsetSceneJson,
   baseScene: THREE.Scene,
   origin: ThreePosition,
   cameraToFollow: THREE.Camera,
-  threebuilder: ThreeBuilder,
   insetWidth = DEFAULT_SIZE,
   insetHeight = DEFAULT_SIZE,
   insetPadding = 0
@@ -212,10 +168,6 @@ export function createInsetController(
       }
 
       setupInsetCamera(state, insetCamera, frontRotation);
-      const axisContents = state.axisJson.contents;
-      if (state.detailedObject === state.axis && Array.isArray(axisContents) && axisContents.length >= 3) {
-        rescaleAxis(state, insetCamera, threebuilder);
-      }
     },
     render(renderer, [x, y]) {
       if (!(renderer instanceof THREE.WebGLRenderer) || !state.detailedObject) {
