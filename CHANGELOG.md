@@ -2,6 +2,14 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.2.4 - 2026-09-16
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- 修复场景重建后 inset 坐标轴仍引用已销毁对象的问题
+- 修复在展示选中原子模式下取消选择后 inset 坐标轴异常变细的问题
+
+
 ## 0.2.3 - 2026-08-27
 
 Package: `@gnosys/matsci-crystal-viewer-kit`
