@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.2.5 - 2026-10-07
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- Fix screen-space selection box sizing so it follows the selected atom or object.
+
+
 ## 0.2.4 - 2026-09-16
 
 Package: `@gnosys/matsci-crystal-viewer-kit`

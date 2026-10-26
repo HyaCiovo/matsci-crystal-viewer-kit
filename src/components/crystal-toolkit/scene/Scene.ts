@@ -430,11 +430,11 @@ export default class Scene {
         const padding = isSphere ? 2 : 6;
         const indicatorWidth = Math.min(
           width,
-          Math.max(18, (isSphere ? Math.max(geometryWidth, geometryHeight) : geometryWidth) + padding * 2)
+          Math.max(6, (isSphere ? Math.max(geometryWidth, geometryHeight) : geometryWidth) + padding * 2)
         );
         const indicatorHeight = Math.min(
           height,
-          Math.max(18, (isSphere ? Math.max(geometryWidth, geometryHeight) : geometryHeight) + padding * 2)
+          Math.max(6, (isSphere ? Math.max(geometryWidth, geometryHeight) : geometryHeight) + padding * 2)
         );
         const centerX = (projectedGeometryBounds.minX + projectedGeometryBounds.maxX) / 2;
         const centerY = (projectedGeometryBounds.minY + projectedGeometryBounds.maxY) / 2;
@@ -476,8 +476,8 @@ export default class Scene {
       const minY = Math.min(...projected.map((point) => ((1 - point.y) / 2) * height));
       const maxY = Math.max(...projected.map((point) => ((1 - point.y) / 2) * height));
       const padding = jsonObject?.type === 'spheres' ? 2 : 6;
-      const indicatorWidth = Math.min(width, Math.max(18, maxX - minX + padding * 2));
-      const indicatorHeight = Math.min(height, Math.max(18, maxY - minY + padding * 2));
+      const indicatorWidth = Math.min(width, Math.max(6, maxX - minX + padding * 2));
+      const indicatorHeight = Math.min(height, Math.max(6, maxY - minY + padding * 2));
       const left = minX - padding;
       const top = minY - padding;
       const visible =
