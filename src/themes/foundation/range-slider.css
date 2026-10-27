@@ -29,6 +29,13 @@
   user-select: none;
 }
 
+:where(.mcv-theme, .mcv-root) .ms-range-slider .ms-slider-control {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
 :where(.mcv-theme, .mcv-root) .ms-range-slider .ms-slider-track {
   position: relative;
   flex: 1;
@@ -65,7 +72,7 @@
   box-shadow: 0 0 0 0.125em color-mix(in srgb, var(--mcv-color-primary) 24%, transparent);
 }
 
-:where(.mcv-theme, .mcv-root) .ms-range-slider .ms-slider-track > div {
+:where(.mcv-theme, .mcv-root) .ms-range-slider .ms-slider-tick {
   position: absolute;
   top: 100%;
   transform: translateX(-50%);

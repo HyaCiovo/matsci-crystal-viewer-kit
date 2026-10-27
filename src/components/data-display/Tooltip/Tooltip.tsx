@@ -1,5 +1,5 @@
+import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import clsx from 'clsx';
-import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { type CSSProperties, type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
 export type TooltipPlace = 'top' | 'right' | 'bottom' | 'left';
@@ -83,27 +83,26 @@ export const Tooltip = ({
   }
 
   return (
-    <TooltipPrimitive.Provider
-      delayDuration={delayShow}
-      skipDelayDuration={0}
-      disableHoverableContent={!clickable}
-    >
-      <TooltipPrimitive.Root open={open} onOpenChange={setOpen}>
-        <TooltipPrimitive.Trigger asChild>{trigger}</TooltipPrimitive.Trigger>
+    <TooltipPrimitive.Provider delay={delayShow} timeout={0}>
+      <TooltipPrimitive.Root disableHoverablePopup={!clickable} open={open} onOpenChange={setOpen}>
+        <TooltipPrimitive.Trigger render={trigger} />
         <TooltipPrimitive.Portal>
-          <TooltipPrimitive.Content
+          <TooltipPrimitive.Positioner
+            collisionPadding={8}
             side={place}
             sideOffset={resolveOffset(offset)}
-            collisionPadding={8}
-            className={clsx('ms-tooltip', 'mcv-tooltip', className)}
-            data-slot="tooltip"
-            data-border={border}
-            data-clickable={clickable}
-            style={style}
           >
-            {content}
-            <TooltipPrimitive.Arrow className="ms-tooltip-arrow" width={8} height={4} />
-          </TooltipPrimitive.Content>
+            <TooltipPrimitive.Popup
+              className={clsx('ms-tooltip', 'mcv-tooltip', className)}
+              data-border={border}
+              data-clickable={clickable}
+              data-slot="tooltip"
+              style={style}
+            >
+              {content}
+              <TooltipPrimitive.Arrow className="ms-tooltip-arrow" />
+            </TooltipPrimitive.Popup>
+          </TooltipPrimitive.Positioner>
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>
     </TooltipPrimitive.Provider>

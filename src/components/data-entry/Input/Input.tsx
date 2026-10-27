@@ -1,6 +1,6 @@
-import { Slot } from '@radix-ui/react-slot';
 import clsx from 'clsx';
 import { forwardRef } from 'react';
+import { Slot } from '../../../internal/Slot';
 
 export type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   asChild?: boolean;

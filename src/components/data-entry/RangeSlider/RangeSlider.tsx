@@ -1,4 +1,4 @@
-import * as Slider from '@radix-ui/react-slider';
+import { Slider } from '@base-ui/react/slider';
 import clsx from 'clsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from '../../../utils/hooks';
@@ -167,34 +167,41 @@ export const RangeSlider = ({
       <div className="ms-slider" style={styleSlider} data-slot="scrubber-track">
         <Slider.Root
           className="ms-slider-root"
-          min={domain[0]}
           max={domain[1]}
+          min={domain[0]}
           step={step}
           value={[sliderValue]}
           onValueChange={(next) => {
-            setSliderValue(next[0]);
-            setInputValue(getDisplayValue(next[0], isLogScale));
+            const nextSliderValue = Array.isArray(next) ? next[0] : next;
+            setSliderValue(nextSliderValue);
+            setInputValue(getDisplayValue(nextSliderValue, isLogScale));
           }}
-          onValueCommit={(next) => emitChange(next[0])}
+          onValueCommitted={(next) => emitChange(Array.isArray(next) ? next[0] : next)}
         >
-          <Slider.Track className="ms-slider-track">
-            <Slider.Range className="ms-slider-range" />
-            {tickMarks?.map((tick, index) => {
-              const offset = ((tick - domain[0]) / (domain[1] - domain[0])) * 100;
-              const tickLabel = isLogScale ? formatPow10(tick) : tick.toString();
+          <Slider.Control className="ms-slider-control">
+            <Slider.Track className="ms-slider-track">
+              <Slider.Indicator className="ms-slider-range" />
+              {tickMarks?.map((tick, index) => {
+                const offset = ((tick - domain[0]) / (domain[1] - domain[0])) * 100;
+                const tickLabel = isLogScale ? formatPow10(tick) : tick.toString();
 
-              return (
-                <div key={`tick-${tick}-${index}`} style={{ left: `${offset}%` }}>
-                  <div className="ms-slider-tick-mark" />
-                  <span data-testid="tick-value" className="ms-slider-tick-value">
-                    {tickLabel}
-                    {inclusiveTickBounds && index === tickMarks.length - 1 ? '+' : ''}
-                  </span>
-                </div>
-              );
-            })}
-          </Slider.Track>
-          <Slider.Thumb data-testid="slider-button" className="ms-slider-thumb" />
+                return (
+                  <div
+                    key={`tick-${tick}-${index}`}
+                    className="ms-slider-tick"
+                    style={{ left: `${offset}%` }}
+                  >
+                    <div className="ms-slider-tick-mark" />
+                    <span data-testid="tick-value" className="ms-slider-tick-value">
+                      {tickLabel}
+                      {inclusiveTickBounds && index === tickMarks.length - 1 ? '+' : ''}
+                    </span>
+                  </div>
+                );
+              })}
+              <Slider.Thumb className="ms-slider-thumb" data-testid="slider-button" />
+            </Slider.Track>
+          </Slider.Control>
         </Slider.Root>
       </div>
     </div>
