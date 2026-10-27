@@ -2,6 +2,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## 0.3.0 - 2026-10-27
+
+Package: `@gnosys/matsci-crystal-viewer-kit`
+
+- feat!: migrate primitives from Radix UI to Base UI
+- fix(选择框): 修复屏幕空间选择框尺寸跟随异常
+- chore(release): 发布 v0.2.4
+- fix(crystal-toolkit/scene): 修复inset轴恢复选择时使用已销毁对象的问题
+- feat: 发布v0.2.3，优化晶体选择并新增多项功能
+- feat(crystal-viewer): 新增实例化渲染与实例级选择，升级v0.2.2
+- chore(package, README): 更新包元数据并修正README中文链接文本
+- chore: add MIT license and Chinese README document
+- fix(crystal-settings): 修复全局挂载的选择菜单交互时设置面板意外关闭的问题，改进滚动条可见性
+- feat(benchmark): 完善基准测试体系，支持v2协议与旧版基线对比
+
+
 ## 0.2.5 - 2026-10-07
 
 Package: `@gnosys/matsci-crystal-viewer-kit`
