@@ -19,15 +19,12 @@
   pointer-events: auto;
 }
 
+/* Base UI 的 Arrow 是独立定位的 div，自定义 transform 会把它推进文字里；
+   这里直接不显示箭头，保持气泡干净。 */
 .mcv-tooltip .ms-tooltip-arrow,
 .mcv-tooltip.ms-tooltip + .ms-tooltip-arrow,
 .mcv-tooltip.ms-tooltip .ms-tooltip-arrow {
-  /* Base UI 的 Arrow 是 div（不是 SVG），用背景色画出小三角。 */
-  width: 8px;
-  height: 8px;
-  background: var(--mcv-tooltip-bg, rgba(15, 23, 42, 0.95));
-  transform: rotate(45deg);
-  border-radius: 1px;
+  display: none;
 }
 
 @keyframes mcv-tooltip-fade-in {

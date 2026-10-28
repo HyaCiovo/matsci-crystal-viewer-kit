@@ -830,7 +830,10 @@ export default class Scene {
     });
     this.threeUUIDTojsonObject = threeUUIDToJsonObject;
     this.computeIdToThree = computeIdToThree;
-    this.axis = axis as Object3D;
+    // 左下角坐标轴用固定比例重建：显示模式的原子/键缩放只应作用于晶体本身。
+    this.axis = (axisJson
+      ? this.buildNeutralAxis(axisJson)
+      : null) as Object3D ?? (axis as Object3D);
     this.axisJson = axisJson;
     this.outlineDirty = true;
 
@@ -861,6 +864,21 @@ export default class Scene {
     if (this.controls) {
       this.controls.update();
     }
+  }
+
+  private buildNeutralAxis(axisJson: SceneJsonLike): THREE.Object3D | null {
+    const builder = new ThreeBuilder({
+      ...this.settings,
+      sphereScale: 1,
+      cylinderScale: 1,
+    } as typeof this.settings);
+    const { rootObject } = buildSceneGraph({
+      sceneJson: axisJson,
+      extractAxis: false,
+      makeLeafObject: (objectJson) =>
+        builder.makeObject(objectJson, new THREE.Object3D()),
+    });
+    return rootObject;
   }
 
   makeObject(object_json: SceneJsonLike): THREE.Object3D {
